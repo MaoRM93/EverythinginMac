@@ -169,7 +169,7 @@ struct HighlightedSearchField: NSViewRepresentable {
     }
 
     func makeNSView(context: Context) -> NSScrollView {
-        let scrollView = NSScrollView()
+        let scrollView = SearchScrollView()
         scrollView.hasVerticalScroller = false
         scrollView.hasHorizontalScroller = false
         scrollView.autohidesScrollers = true
@@ -179,7 +179,7 @@ struct HighlightedSearchField: NSViewRepresentable {
         let textView = HighlightedNSTextView()
         textView.isRichText = false
         textView.allowsUndo = true
-        textView.font = .systemFont(ofSize: 26)
+        textView.font = .systemFont(ofSize: 18)
         textView.textColor = .labelColor
         textView.backgroundColor = .clear
         textView.drawsBackground = false
@@ -188,8 +188,13 @@ struct HighlightedSearchField: NSViewRepresentable {
         textView.textContainer?.containerSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         textView.textContainer?.widthTracksTextView = false
         textView.textContainer?.heightTracksTextView = false
-        textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: 40)
-        textView.minSize = NSSize(width: 0, height: 20)
+        // Zero horizontal insets and a small symmetric vertical inset keep the
+        // typed text vertically centred with the magnifying glass icon.
+        textView.textContainerInset = NSSize(width: 0, height: 2)
+        textView.textContainer?.lineFragmentPadding = 0
+        textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: 26)
+        textView.minSize = NSSize(width: 0, height: 26)
+        textView.frame = NSRect(x: 0, y: 0, width: 10, height: 26)
         textView.isEditable = true
         textView.isSelectable = true
         textView.delegate = context.coordinator
@@ -200,6 +205,9 @@ struct HighlightedSearchField: NSViewRepresentable {
 
         // Tab key handling
         textView.onTabKey = context.coordinator.handleTab
+
+        // Escape key handling: clear query, then release focus
+        textView.onEscapeKey = context.coordinator.handleEscape
 
         // Placeholder
         textView.placeholderString = placeholder
@@ -213,8 +221,17 @@ struct HighlightedSearchField: NSViewRepresentable {
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         guard let textView = scrollView.documentView as? HighlightedNSTextView else { return }
 
-        // Update text if externally changed (e.g., clear button, ghost suggestion accept)
+        // SwiftUI re-renders this view whenever an observed value changes (for
+        // example index progress). While an input method is composing, any
+        // responder/string/attribute mutation cancels the composition, which
+        // shows up as a flashing candidate window. Leave the text view alone
+        // until the composition is committed or cancelled.
+        if textView.hasMarkedText() { return }
+
+        // Never overwrite the text while an input method (Pinyin etc.) is
+        // composing marked text — reassigning `string` cancels the composition.
         if textView.string != text {
+            // Update text if externally changed (e.g., clear button, ghost suggestion accept)
             context.coordinator.isUpdatingFromSwiftUI = true
             let selectedRanges = textView.selectedRanges
             textView.string = text
@@ -249,13 +266,19 @@ struct HighlightedSearchField: NSViewRepresentable {
             guard !isUpdatingFromSwiftUI,
                   let textView = notification.object as? NSTextView else { return }
 
+            // While marked text exists the input method owns the composition.
+            // Re-applying attributes here cancels it, so wait for the commit.
+            if textView.hasMarkedText() { return }
+
             parent.text = textView.string
             applyHighlighting(textView)
         }
 
         func textViewDidChangeSelection(_ notification: Notification) {
-            // Keep focus state in sync
-            if let textView = notification.object as? NSTextView {
+            // Selection changes happen constantly during input-method
+            // composition; publishing them would re-render the view and can
+            // cancel the composition. Only sync when no marked text exists.
+            if let textView = notification.object as? NSTextView, !textView.hasMarkedText() {
                 let isFocused = textView.window?.firstResponder === textView
                 if parent.isFocused.wrappedValue != isFocused {
                     parent.isFocused.wrappedValue = isFocused
@@ -267,11 +290,23 @@ struct HighlightedSearchField: NSViewRepresentable {
             return parent.onTab?() ?? false
         }
 
+        func handleEscape() {
+            guard let textView else { return }
+            if textView.string.isEmpty {
+                textView.window?.makeFirstResponder(nil)
+                parent.isFocused.wrappedValue = false
+            } else {
+                textView.string = ""
+                parent.text = ""
+                applyHighlighting(textView)
+            }
+        }
+
         func applyHighlighting(_ textView: NSTextView) {
             guard let textStorage = textView.textStorage else { return }
             let fullRange = NSRange(location: 0, length: textStorage.length)
             let text = textStorage.string
-            let font = NSFont.systemFont(ofSize: 26)
+            let font = NSFont.systemFont(ofSize: 18)
 
             // Reset to default style
             textStorage.beginEditing()
@@ -307,21 +342,50 @@ struct HighlightedSearchField: NSViewRepresentable {
     }
 }
 
+// MARK: - Single-line scroll container
+
+/// Keeps the document view exactly as tall as the clip view so the text is
+/// laid out from the top of a full-height field instead of being pinned to
+/// the top edge of a shorter document view (which made the text sit higher
+/// than the magnifying glass icon).
+private final class SearchScrollView: NSScrollView {
+    override func layout() {
+        super.layout()
+        guard let documentView else { return }
+        let target = NSSize(width: max(documentView.frame.width, contentSize.width),
+                            height: contentSize.height)
+        if documentView.frame.size != target {
+            documentView.setFrameSize(target)
+        }
+    }
+}
+
 // MARK: - Custom NSTextView subclass for Tab key handling
 
 class HighlightedNSTextView: NSTextView {
     var onTabKey: (() -> Bool)?
+    var onEscapeKey: (() -> Void)?
     var placeholderString: String = ""
     var ghostSuggestion: String? {
         didSet { needsDisplay = true }
     }
 
     override func keyDown(with event: NSEvent) {
+        // Let the input method finish/cancel its own composition first.
+        if hasMarkedText() {
+            super.keyDown(with: event)
+            return
+        }
         // Handle Tab key for ghost suggestion
         if event.keyCode == 48 { // Tab key
             if let handler = onTabKey, handler() {
                 return // Tab was consumed by ghost suggestion
             }
+        }
+        // Handle Escape: clear query, then release focus
+        if event.keyCode == 53 { // Escape key
+            onEscapeKey?()
+            return
         }
         super.keyDown(with: event)
     }
@@ -330,7 +394,7 @@ class HighlightedNSTextView: NSTextView {
         // Draw ghost suggestion behind the real text (before super.draw paints the typed text)
         if let ghost = ghostSuggestion, !ghost.isEmpty, !string.isEmpty {
             let attrs: [NSAttributedString.Key: Any] = [
-                .font: font ?? NSFont.systemFont(ofSize: 26),
+                .font: font ?? NSFont.systemFont(ofSize: 18),
                 .foregroundColor: NSColor.secondaryLabelColor.withAlphaComponent(0.4),
             ]
             let ghostStr = NSAttributedString(string: ghost, attributes: attrs)
@@ -347,7 +411,7 @@ class HighlightedNSTextView: NSTextView {
         // Draw placeholder when empty
         if string.isEmpty && !placeholderString.isEmpty {
             let attrs: [NSAttributedString.Key: Any] = [
-                .font: font ?? NSFont.systemFont(ofSize: 26),
+                .font: font ?? NSFont.systemFont(ofSize: 18),
                 .foregroundColor: NSColor.placeholderTextColor,
             ]
             let placeholder = NSAttributedString(string: placeholderString, attributes: attrs)

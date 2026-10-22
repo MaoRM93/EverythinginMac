@@ -30,9 +30,7 @@ class SearchViewModel: ObservableObject {
     @Published var totalRecords: UInt32 = 0
     @Published var queryTimeMs: Double = 0
     @Published var isMonitoring: Bool = false
-    @Published var scannedCount: UInt64 = 0
     var isLoadingMore: Bool = false
-    @Published var showingRecent: Bool = false
     @Published var isContentSearch: Bool = false
     @Published var contentResults: [ContentFileItem] = []
     @Published var isContentIndexing: Bool = false
@@ -53,7 +51,7 @@ class SearchViewModel: ObservableObject {
     private let historyStore = SearchHistoryStore()
     private let searchOptions = SearchOptions.shared
     private var searchTask: Task<Void, Never>?
-    private var recentTask: Task<Void, Never>?
+
     private var settledTask: Task<Void, Never>?
     private var optionsSink: AnyCancellable?
     private var cachedResults: [MEFileResult] = []
@@ -66,6 +64,7 @@ class SearchViewModel: ObservableObject {
     private static let indexChangeThrottleNs: UInt64 = 5_000_000_000 // 5 seconds
 
     private var indexChangeTask: Task<Void, Never>?
+    private var statusTask: Task<Void, Never>?
     let refreshThrottle = IndexRefreshThrottle()
 
     static var cacheDir: String {
@@ -95,12 +94,22 @@ class SearchViewModel: ObservableObject {
         return (cacheDir as NSString).appendingPathComponent("index.ptable")
     }
 
+    private var started = false
+
     init() {
         optionsSink = searchOptions.objectWillChange.sink { [weak self] _ in
             Task { @MainActor [weak self] in
                 self?.onSearchOptionsChanged()
             }
         }
+    }
+
+    /// Indexing is deliberately not started in `init`. The welcome screen must
+    /// run first so macOS permission prompts only appear after the user has
+    /// read why they are needed.
+    func start() {
+        guard !started else { return }
+        started = true
         startIncremental()
     }
 
@@ -114,13 +123,6 @@ class SearchViewModel: ObservableObject {
 
     func startIncremental() {
         isScanning = true
-        scannedCount = 0
-
-        bridge.onScanProgress = { [weak self] fileCount, dirCount in
-            Task { @MainActor in
-                self?.scannedCount = fileCount + dirCount
-            }
-        }
 
         bridge.onContentIndexProgress = { [weak self] indexed, total in
             Task { @MainActor in
@@ -163,17 +165,43 @@ class SearchViewModel: ObservableObject {
 
                 if !self.searchText.isEmpty {
                     self.performSearch(self.searchText)
-                } else {
-                    self.loadRecentFiles()
                 }
+            }
+        }
+
+        startStatusPolling()
+    }
+
+    /// Poll the engine's real state while it is loading/scanning/syncing.
+    /// The startup completion can return long before the background sync
+    /// (FSEvents replay + directory catch-up) has caught up, so the UI must
+    /// follow the engine instead of assuming "completion == finished".
+    private func startStatusPolling() {
+        statusTask?.cancel()
+        statusTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                guard let self else { return }
+
+                let scanning = self.bridge.isScanning
+                let syncing = self.bridge.isSyncing
+                if self.isScanning != scanning { self.isScanning = scanning }
+                if self.isSyncing != syncing { self.isSyncing = syncing }
+
+                let live = self.bridge.liveRecordCount()
+                if live > 0 && live != self.totalRecords { self.totalRecords = live }
+
+                if !scanning && !syncing {
+                    self.statusTask = nil
+                    return
+                }
+                try? await Task.sleep(nanoseconds: 400_000_000)
             }
         }
     }
 
     func rebuildIndex() {
-        guard !isScanning else { return }
+        guard started, !isScanning else { return }
         searchTask?.cancel()
-        recentTask?.cancel()
         indexChangeTask?.cancel()
         searchGeneration &+= 1
         scanComplete = false
@@ -195,7 +223,6 @@ class SearchViewModel: ObservableObject {
 
     func onSearchTextChanged() {
         searchTask?.cancel()
-        recentTask?.cancel()
         searchGeneration &+= 1
         isLoadingMore = false
         let text = searchText
@@ -212,21 +239,9 @@ class SearchViewModel: ObservableObject {
             settledTask?.cancel()
             // Cancel any in-flight queries for this GUI session
             bridge.cancelSession(Self.guiSessionId)
-            if scanComplete {
-                // Slight delay so the stale query's dispatch_apply threads
-                // detect the generation change and exit before we compete for the thread pool
-                recentTask = Task { @MainActor [weak self] in
-                    try? await Task.sleep(nanoseconds: 20_000_000) // 20ms
-                    guard !Task.isCancelled, let self else { return }
-                    self.loadRecentFiles()
-                }
-            } else {
-                displayItems = []
-                showingRecent = false
-            }
+            displayItems = []
             return
         }
-        showingRecent = false
 
         let lowerText = text.lowercased()
         if lowerText.hasPrefix("infile:") {
@@ -369,31 +384,6 @@ class SearchViewModel: ObservableObject {
         }
     }
 
-    private func loadRecentFiles() {
-        recentTask?.cancel()
-        let bridge = self.bridge
-        let gen = searchGeneration
-        recentTask = Task.detached { [weak self] in
-            // P-4: Use batch method — single engine lock, no NSNumber boxing
-            let results = bridge.recentResults(100)
-            var items: [FileItem] = []
-            items.reserveCapacity(results.count)
-            for r in results {
-                guard !Task.isCancelled else { return }
-                items.append(FileItem(
-                    id: "\(r.path)/\(r.name)", index: 0,
-                    name: r.name, path: r.path,
-                    type: r.type, size: r.size, modTime: r.modTime
-                ))
-            }
-            await MainActor.run { [weak self] in
-                guard let self, self.searchGeneration == gen else { return }
-                self.displayItems = items
-                self.showingRecent = true
-            }
-        }
-    }
-
     private func onIndexChanged() {
         if refreshThrottle.indexChanged() {
             performIndexRefresh()
@@ -441,8 +431,6 @@ class SearchViewModel: ObservableObject {
             performSearch(searchText)
         } else if isContentSearch && !contentKeyword.isEmpty {
             performContentSearch(contentKeyword)
-        } else if showingRecent {
-            loadRecentFiles()
         }
     }
 

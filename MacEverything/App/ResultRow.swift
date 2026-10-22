@@ -1,6 +1,38 @@
 import SwiftUI
 import AppKit
 
+/// Display-only path shortening. Never affects queries, opening files,
+/// revealing in Finder, or copying paths — those always use the real path.
+enum PathDisplay {
+    static func shorten(_ path: String) -> String {
+        let home = NSHomeDirectory()
+        let cloudDocs = home + "/Library/Mobile Documents/com~apple~CloudDocs"
+
+        // iCloud Drive container → readable label
+        if path == cloudDocs { return "iCloud云盘" }
+        if path.hasPrefix(cloudDocs + "/") {
+            return "iCloud云盘" + String(path.dropFirst(cloudDocs.count))
+        }
+
+        var display: String
+        if path == home {
+            display = "~"
+        } else if path.hasPrefix(home + "/") {
+            display = "~" + String(path.dropFirst(home.count))
+        } else {
+            display = path
+        }
+
+        // Remaining references to the cloud container keep the same readable name
+        if display.contains("com~apple~CloudDocs") {
+            display = display
+                .replacingOccurrences(of: "/Library/Mobile Documents/com~apple~CloudDocs", with: "")
+                .replacingOccurrences(of: "com~apple~CloudDocs", with: "iCloud云盘")
+        }
+        return display
+    }
+}
+
 /// Shared icon cache to avoid repeated NSWorkspace.shared.icon(forFile:) calls.
 /// - App bundles (type=5): cached by full path (each app has a unique icon)
 /// - Regular files (type=1): cached by file extension (same ext → same icon)
@@ -61,44 +93,52 @@ struct ResultRow: View {
     @State private var isHovered = false
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 10) {
             fileIcon(for: item)
                 .resizable()
                 .aspectRatio(contentMode: .fit)
-                .frame(width: 24, height: 24)
+                .frame(width: 26, height: 26)
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 3) {
                 let highlighted = highlightCrossMatches(
-                    path: item.path, name: item.name, hints: hints,
-                    nameFont: .title3, nameColor: .primary,
-                    pathFont: .subheadline, pathColor: .secondary)
-                highlighted.nameText.lineLimit(1)
-                highlighted.pathText.lineLimit(1)
+                    path: PathDisplay.shorten(item.path), name: item.name, hints: hints,
+                    nameFont: .system(size: 13), nameColor: .primary,
+                    pathFont: .custom("Menlo", size: 11), pathColor: .secondary)
+                highlighted.nameText
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                highlighted.pathText
+                    .lineLimit(1)
+                    .truncationMode(.middle)
             }
+            .layoutPriority(1)
 
-            Spacer()
+            Spacer(minLength: 12)
 
-            if item.type == 1 && item.size > 0 {
-                Text(formatSize(item.size))
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-            }
+            Text(item.type == 1 && item.size > 0 ? formatSize(item.size) : "")
+                .font(.system(size: 11))
+                .monospacedDigit()
+                .foregroundColor(.secondary)
+                .lineLimit(1)
+                .frame(width: 64, alignment: .trailing)
         }
-        .padding(.vertical, 4)
-        .padding(.horizontal, 6)
+        .padding(.vertical, 8)
+        .padding(.horizontal, 10)
+        .frame(minHeight: 58)
         .background(
-            RoundedRectangle(cornerRadius: 6)
-                .fill(isHovered ? Color.accentColor.opacity(0.12) : Color.clear)
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(isHovered ? Color.primary.opacity(0.05) : Color.clear)
         )
         .contentShape(Rectangle())
         .onHover { hovering in
             isHovered = hovering
         }
         .contextMenu {
-            Button("Open") { openFile(item) }
-            Button("Reveal in Finder") { revealInFinder(item) }
+            Button("打开文件") { openFile(item) }
+            Button("打开所在的文件夹") { revealInFinder(item) }
             Divider()
-            Button("Copy Path") { copyPath(item) }
+            Button("复制文件") { copyFile(item) }
+            Button("复制路径") { copyPath(item) }
         }
         .onDrag {
             let fullPath = item.path + "/" + item.name
@@ -156,5 +196,13 @@ struct ResultRow: View {
         let fullPath = item.path + "/" + item.name
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(fullPath, forType: .string)
+    }
+
+    /// Copy the file itself so it can be pasted in Finder.
+    private func copyFile(_ item: FileItem) {
+        let fullPath = item.path + "/" + item.name
+        let url = URL(fileURLWithPath: fullPath)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.writeObjects([url as NSURL])
     }
 }

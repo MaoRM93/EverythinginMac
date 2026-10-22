@@ -12,68 +12,50 @@ func highlightMatches(in text: String, keyword: String,
         return Text(text).font(font).foregroundColor(color)
     }
 
-    let lowerText = text.lowercased()
     let lowerKey = keyword.lowercased()
 
     // Glob patterns — highlight literal (non-wildcard) segments
     if lowerKey.contains("*") || lowerKey.contains("?") {
-        let literals = extractGlobLiterals(lowerKey)
+        let literals = extractGlobLiterals(keyword)
         if literals.isEmpty {
             return Text(text).font(font).foregroundColor(color)
         }
-        let ranges = findAllLiteralRanges(in: lowerText, literals: literals)
+        let ranges = findAllLiteralRanges(in: text, literals: literals)
         return buildHighlightedText(text: text, ranges: ranges, font: font, color: color, highlightColor: highlightColor)
     }
 
     // Multi-keyword: split by spaces and find all matches for each word
-    let words = lowerKey.components(separatedBy: " ").filter { !$0.isEmpty }
+    let words = keyword.components(separatedBy: " ").filter { !$0.isEmpty }
     if words.isEmpty {
         return Text(text).font(font).foregroundColor(color)
     }
 
+    // NOTE: ranges must always be computed on `text` itself (never on a
+    // lowercased() copy) — String.Index values are only valid for the
+    // string instance that produced them.
     let ranges: [Range<String.Index>]
     if words.count == 1 {
-        // Single keyword — simple forward scan
+        // Single keyword — simple forward scan, case-insensitive
         var singleRanges: [Range<String.Index>] = []
-        var searchStart = lowerText.startIndex
-        while searchStart < lowerText.endIndex,
-              let range = lowerText.range(of: words[0], range: searchStart..<lowerText.endIndex) {
+        var searchStart = text.startIndex
+        while searchStart < text.endIndex,
+              let range = text.range(of: words[0], options: [.caseInsensitive],
+                                     range: searchStart..<text.endIndex) {
             singleRanges.append(range)
             searchStart = range.upperBound
         }
         ranges = singleRanges
     } else {
         // Multiple keywords — find all matches for each, merge ranges
-        ranges = findAllLiteralRanges(in: lowerText, literals: words)
+        ranges = findAllLiteralRanges(in: text, literals: words)
     }
 
     if ranges.isEmpty {
         return Text(text).font(font).foregroundColor(color)
     }
 
-    // Build attributed Text by segments
-    var result = Text("")
-    var currentIndex = text.startIndex
-
-    for range in ranges {
-        // Non-matched segment before this match
-        if currentIndex < range.lowerBound {
-            result = result + Text(text[currentIndex..<range.lowerBound])
-                .font(font).foregroundColor(color)
-        }
-        // Matched segment (use original case from text)
-        result = result + Text(text[range])
-            .font(font).foregroundColor(highlightColor).bold()
-        currentIndex = range.upperBound
-    }
-
-    // Remaining text after last match
-    if currentIndex < text.endIndex {
-        result = result + Text(text[currentIndex..<text.endIndex])
-            .font(font).foregroundColor(color)
-    }
-
-    return result
+    return buildHighlightedText(text: text, ranges: ranges, font: font,
+                                color: color, highlightColor: highlightColor)
 }
 
 /// Cross-boundary highlight: matches keyword against `path + "/" + name` (the full path),
@@ -96,22 +78,21 @@ func highlightCrossMatches(path: String, name: String, keyword: String,
     }
 
     let fullPath = path + "/" + name
-    let lowerFull = fullPath.lowercased()
-    let lowerKey = keyword.lowercased()
 
     // Find all matches in fullPath (supports multi-keyword via space splitting)
-    let words = lowerKey.components(separatedBy: " ").filter { !$0.isEmpty }
+    let words = keyword.components(separatedBy: " ").filter { !$0.isEmpty }
     var fullRanges: [Range<String.Index>]
     if words.count <= 1 {
         fullRanges = []
-        var searchStart = lowerFull.startIndex
-        while searchStart < lowerFull.endIndex,
-              let range = lowerFull.range(of: lowerKey, range: searchStart..<lowerFull.endIndex) {
+        var searchStart = fullPath.startIndex
+        while searchStart < fullPath.endIndex,
+              let range = fullPath.range(of: keyword, options: [.caseInsensitive],
+                                         range: searchStart..<fullPath.endIndex) {
             fullRanges.append(range)
             searchStart = range.upperBound
         }
     } else {
-        fullRanges = findAllLiteralRanges(in: lowerFull, literals: words)
+        fullRanges = findAllLiteralRanges(in: fullPath, literals: words)
     }
 
     if fullRanges.isEmpty {
@@ -120,48 +101,11 @@ func highlightCrossMatches(path: String, name: String, keyword: String,
                 Text(path).font(pathFont).foregroundColor(pathColor))
     }
 
-    // The boundary between path and name in fullPath is at index path.count + 1 (the "/" separator)
-    // fullPath = path + "/" + name
-    //            0..pathLen-1  pathLen  pathLen+1..end
-    // pathLen = path.count, separator at path.endIndex, name starts at separatorEnd
-    let separatorIndex = fullPath.index(fullPath.startIndex, offsetBy: path.count)
-    let nameStartInFull = fullPath.index(after: separatorIndex)
-
-    // Map fullPath ranges to path ranges and name ranges
-    var pathRanges: [Range<String.Index>] = []
-    var nameRanges: [Range<String.Index>] = []
-
-    for range in fullRanges {
-        let matchStart = range.lowerBound
-        let matchEnd = range.upperBound
-
-        // Entirely within path (including the "/" separator shown as part of path display is tricky,
-        // but the separator is not displayed in either path or name — path ends before "/",
-        // name starts after "/". We clip to each component.)
-        if matchEnd <= separatorIndex {
-            // Entirely within path portion
-            pathRanges.append(matchStart..<matchEnd)
-        } else if matchStart >= nameStartInFull {
-            // Entirely within name portion — remap to name's own indices
-            let offset = fullPath.distance(from: nameStartInFull, to: matchStart)
-            let length = fullPath.distance(from: matchStart, to: matchEnd)
-            let nameStart = name.index(name.startIndex, offsetBy: offset)
-            let nameEnd = name.index(nameStart, offsetBy: length)
-            nameRanges.append(nameStart..<nameEnd)
-        } else {
-            // Cross-boundary: split into path part and name part
-            // Path part: matchStart ..< separatorIndex (clip at path end)
-            if matchStart < separatorIndex {
-                pathRanges.append(matchStart..<separatorIndex)
-            }
-            // Name part: 0 ..< (matchEnd - nameStartInFull)
-            if matchEnd > nameStartInFull {
-                let nameLen = fullPath.distance(from: nameStartInFull, to: matchEnd)
-                let nameEnd = name.index(name.startIndex, offsetBy: nameLen)
-                nameRanges.append(name.startIndex..<nameEnd)
-            }
-        }
-    }
+    // Map fullPath ranges back onto path and name (rebuilding indices per string)
+    let (pathRanges, nameRanges) = mapFullPathRanges(fullRanges,
+                                                     fullPath: fullPath,
+                                                     path: path,
+                                                     name: name)
 
     // Build highlighted Text for name
     let nameText = buildHighlightedText(text: name, ranges: nameRanges, font: nameFont, color: nameColor, highlightColor: highlightColor)
@@ -180,12 +124,16 @@ func extractGlobLiterals(_ pattern: String) -> [String] {
 
 /// Find all case-insensitive occurrences of any literal in `text`,
 /// merge overlapping ranges, and return sorted non-overlapping ranges.
-func findAllLiteralRanges(in lowerText: String, literals: [String]) -> [Range<String.Index>] {
+/// Ranges are always relative to `text` itself so they stay valid for slicing.
+func findAllLiteralRanges(in text: String, literals: [String],
+                          caseInsensitive: Bool = true) -> [Range<String.Index>] {
     var allRanges: [Range<String.Index>] = []
-    for literal in literals {
-        var searchStart = lowerText.startIndex
-        while searchStart < lowerText.endIndex,
-              let range = lowerText.range(of: literal, range: searchStart..<lowerText.endIndex) {
+    let options: String.CompareOptions = caseInsensitive ? [.caseInsensitive] : []
+    for literal in literals where !literal.isEmpty {
+        var searchStart = text.startIndex
+        while searchStart < text.endIndex,
+              let range = text.range(of: literal, options: options,
+                                     range: searchStart..<text.endIndex) {
             allRanges.append(range)
             searchStart = range.upperBound
         }
@@ -207,6 +155,10 @@ func findAllLiteralRanges(in lowerText: String, literals: [String]) -> [Range<St
 }
 
 /// Helper: build a SwiftUI Text with specified ranges highlighted.
+/// The result is a single AttributedString rendered via `Text(attr)` —
+/// concatenating `Text` values with `+` is avoided on purpose, because
+/// SwiftUI can drop trailing runs of a concatenated Text when it is
+/// clipped/truncated to one line, which silently cuts off file names.
 func buildHighlightedText(text: String, ranges: [Range<String.Index>],
                                   font: Font, color: Color,
                                   highlightColor: Color) -> Text {
@@ -214,25 +166,31 @@ func buildHighlightedText(text: String, ranges: [Range<String.Index>],
         return Text(text).font(font).foregroundColor(color)
     }
 
-    var result = Text("")
+    var result = AttributedString()
     var currentIndex = text.startIndex
 
     for range in ranges {
         if currentIndex < range.lowerBound {
-            result = result + Text(text[currentIndex..<range.lowerBound])
-                .font(font).foregroundColor(color)
+            var segment = AttributedString(String(text[currentIndex..<range.lowerBound]))
+            segment.font = font
+            segment.foregroundColor = color
+            result.append(segment)
         }
-        result = result + Text(text[range])
-            .font(font).foregroundColor(highlightColor).bold()
+        var segment = AttributedString(String(text[range]))
+        segment.font = font.bold()
+        segment.foregroundColor = highlightColor
+        result.append(segment)
         currentIndex = range.upperBound
     }
 
     if currentIndex < text.endIndex {
-        result = result + Text(text[currentIndex..<text.endIndex])
-            .font(font).foregroundColor(color)
+        var segment = AttributedString(String(text[currentIndex..<text.endIndex]))
+        segment.font = font
+        segment.foregroundColor = color
+        result.append(segment)
     }
 
-    return result
+    return Text(result)
 }
 
 // MARK: - Hint-based highlighting
@@ -241,22 +199,19 @@ func buildHighlightedText(text: String, ranges: [Range<String.Index>],
 func computeRangesForHint(in text: String, hint: HighlightHint) -> [Range<String.Index>] {
     guard !hint.text.isEmpty else { return [] }
 
-    let searchText: String
-    let searchKey: String
-    if hint.caseSensitive {
-        searchText = text
-        searchKey = hint.text
-    } else {
-        searchText = text.lowercased()
-        searchKey = hint.text.lowercased()
-    }
+    // Always search `text` itself. `String.Index` values belong to the
+    // string instance that created them, so searching a lowercased() copy
+    // and slicing the original silently corrupts or truncates the output.
+    let searchKey = hint.text
+    let options: String.CompareOptions = hint.caseSensitive ? [] : [.caseInsensitive]
 
     switch hint.matchMode {
     case .substring:
         var ranges: [Range<String.Index>] = []
-        var start = searchText.startIndex
-        while start < searchText.endIndex,
-              let range = searchText.range(of: searchKey, range: start..<searchText.endIndex) {
+        var start = text.startIndex
+        while start < text.endIndex,
+              let range = text.range(of: searchKey, options: options,
+                                     range: start..<text.endIndex) {
             ranges.append(range)
             start = range.upperBound
         }
@@ -265,7 +220,8 @@ func computeRangesForHint(in text: String, hint: HighlightHint) -> [Range<String
     case .glob:
         let literals = extractGlobLiterals(searchKey)
         if literals.isEmpty { return [] }
-        return findAllLiteralRanges(in: searchText, literals: literals)
+        return findAllLiteralRanges(in: text, literals: literals,
+                                    caseInsensitive: !hint.caseSensitive)
 
     case .regex:
         var options: NSRegularExpression.Options = []
@@ -384,33 +340,37 @@ func highlightCrossMatches(path: String, name: String, hints: [HighlightHint],
 }
 
 /// Map ranges from fullPath (path+"/"+name) back to individual path and name ranges.
+/// Indices from `fullPath` are converted through character offsets before being
+/// rebuilt on `path` / `name`, since String.Index values are not interchangeable
+/// between different string instances.
 private func mapFullPathRanges(_ fullRanges: [Range<String.Index>],
                                fullPath: String, path: String,
                                name: String) -> (pathRanges: [Range<String.Index>],
                                                  nameRanges: [Range<String.Index>]) {
-    let separatorIndex = fullPath.index(fullPath.startIndex, offsetBy: path.count)
-    let nameStartInFull = fullPath.index(after: separatorIndex)
+    let pathLength = path.count
+    let nameStartOffset = pathLength + 1 // skip the "/" separator
 
     var pathRanges: [Range<String.Index>] = []
     var nameRanges: [Range<String.Index>] = []
 
     for range in fullRanges {
-        if range.upperBound <= separatorIndex {
-            pathRanges.append(range)
-        } else if range.lowerBound >= nameStartInFull {
-            let offset = fullPath.distance(from: nameStartInFull, to: range.lowerBound)
-            let length = fullPath.distance(from: range.lowerBound, to: range.upperBound)
-            let nStart = name.index(name.startIndex, offsetBy: offset)
-            let nEnd = name.index(nStart, offsetBy: length)
-            nameRanges.append(nStart..<nEnd)
-        } else {
-            if range.lowerBound < separatorIndex {
-                pathRanges.append(range.lowerBound..<separatorIndex)
-            }
-            if range.upperBound > nameStartInFull {
-                let nameLen = fullPath.distance(from: nameStartInFull, to: range.upperBound)
-                let nEnd = name.index(name.startIndex, offsetBy: nameLen)
-                nameRanges.append(name.startIndex..<nEnd)
+        let startOffset = fullPath.distance(from: fullPath.startIndex, to: range.lowerBound)
+        let endOffset = fullPath.distance(from: fullPath.startIndex, to: range.upperBound)
+
+        if startOffset < pathLength {
+            let pEnd = min(endOffset, pathLength)
+            let pStart = path.index(path.startIndex, offsetBy: startOffset)
+            let pEndIndex = path.index(path.startIndex, offsetBy: pEnd)
+            pathRanges.append(pStart..<pEndIndex)
+        }
+
+        if endOffset > nameStartOffset {
+            let nStart = max(startOffset, nameStartOffset) - nameStartOffset
+            let nEnd = min(endOffset - nameStartOffset, name.count)
+            if nStart < nEnd {
+                let nStartIndex = name.index(name.startIndex, offsetBy: nStart)
+                let nEndIndex = name.index(name.startIndex, offsetBy: nEnd)
+                nameRanges.append(nStartIndex..<nEndIndex)
             }
         }
     }

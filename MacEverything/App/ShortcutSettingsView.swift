@@ -4,30 +4,30 @@ import Carbon.HIToolbox
 struct ShortcutSettingsView: View {
     @State private var isRecording = false
     @State private var currentShortcut: String = ""
-    @State private var modifiers: UInt32 = UInt32(optionKey)
-    @State private var keyCode: UInt32 = UInt32(kVK_Space)
+    @State private var modifiers: UInt32 = DefaultHotkey.modifiers
+    @State private var keyCode: UInt32 = DefaultHotkey.keyCode
 
     var body: some View {
         VStack(spacing: 20) {
-            Text("Global Hotkey Settings")
+            Text("全局快捷键设置")
                 .font(.title2)
                 .fontWeight(.semibold)
 
-            Text("Click the button below and press your desired key combination to set the global hotkey for showing/hiding MacEverything.")
+            Text("点击下方按钮并按下想用的组合键，设置用于显示 MacEverything 并聚焦搜索框的全局快捷键。")
                 .font(.body)
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 360)
 
             VStack(spacing: 12) {
-                Text("Current Shortcut")
+                Text("当前快捷键")
                     .font(.subheadline)
                     .foregroundColor(.secondary)
 
                 Button(action: {
                     isRecording.toggle()
                 }) {
-                    Text(isRecording ? "Press a key combination..." : currentShortcut)
+                    Text(isRecording ? "请按下组合键…" : currentShortcut)
                         .font(.title3)
                         .fontWeight(.medium)
                         .foregroundColor(isRecording ? .accentColor : .primary)
@@ -61,14 +61,14 @@ struct ShortcutSettingsView: View {
             }
 
             HStack(spacing: 16) {
-                Button("Reset to Default") {
-                    keyCode = UInt32(kVK_Space)
-                    modifiers = UInt32(optionKey)
+                Button("恢复默认（⌘⇧F）") {
+                    keyCode = DefaultHotkey.keyCode
+                    modifiers = DefaultHotkey.modifiers
                     currentShortcut = describeShortcut(keyCode: keyCode, modifiers: modifiers)
                     saveAndApply()
                 }
 
-                Button("Close") {
+                Button("关闭") {
                     NSApp.keyWindow?.close()
                 }
                 .keyboardShortcut(.cancelAction)
@@ -86,6 +86,9 @@ struct ShortcutSettingsView: View {
         if defaults.object(forKey: "hotkeyKeyCode") != nil {
             keyCode = UInt32(defaults.integer(forKey: "hotkeyKeyCode"))
             modifiers = UInt32(defaults.integer(forKey: "hotkeyModifiers"))
+        } else {
+            keyCode = DefaultHotkey.keyCode
+            modifiers = DefaultHotkey.modifiers
         }
         currentShortcut = describeShortcut(keyCode: keyCode, modifiers: modifiers)
     }
@@ -107,12 +110,12 @@ func describeShortcut(keyCode: UInt32, modifiers: UInt32) -> String {
 
     let keyName: String
     switch Int(keyCode) {
-    case kVK_Space: keyName = "Space"
-    case kVK_Return: keyName = "Return"
+    case kVK_Space: keyName = "空格"
+    case kVK_Return: keyName = "回车"
     case kVK_Tab: keyName = "Tab"
     case kVK_Escape: keyName = "Esc"
-    case kVK_Delete: keyName = "Delete"
-    case kVK_ForwardDelete: keyName = "Fwd Delete"
+    case kVK_Delete: keyName = "删除"
+    case kVK_ForwardDelete: keyName = "前向删除"
     case kVK_UpArrow: keyName = "↑"
     case kVK_DownArrow: keyName = "↓"
     case kVK_LeftArrow: keyName = "←"

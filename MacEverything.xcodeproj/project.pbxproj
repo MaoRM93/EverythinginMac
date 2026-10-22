@@ -366,6 +366,7 @@
 				A3000001 /* Frameworks */,
 				A3000002 /* Resources */,
 				D6000001 /* Copy MCP Binary */,
+				E6000001 /* Auto Increment Version */,
 			);
 			buildRules = (
 			);
@@ -439,6 +440,23 @@
 			);
 		};
 /* End PBXProject section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		E6000001 /* Auto Increment Version */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			name = "Auto Increment Version";
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "VERSION_FILE=\"$SRCROOT/MacEverything/version.txt\"\nif [ ! -f \"$VERSION_FILE\" ]; then printf '%s' '102.0.0.100' > \"$VERSION_FILE\"; fi\nCURRENT=$(tr -d '[:space:]' < \"$VERSION_FILE\")\nIFS=. read -r MAJOR MINOR PATCH BUILD <<< \"$CURRENT\"\nif [ -z \"$BUILD\" ]; then BUILD=0; fi\nNEXT=\"$MAJOR.$MINOR.$PATCH.$((BUILD+1))\"\nSOURCE_PLIST=\"$SRCROOT/MacEverything/Info.plist\"\n/usr/libexec/PlistBuddy -c \"Set :CFBundleShortVersionString $CURRENT\" \"$SOURCE_PLIST\"\n/usr/libexec/PlistBuddy -c \"Set :CFBundleVersion $CURRENT\" \"$SOURCE_PLIST\"\nPLIST=\"$BUILT_PRODUCTS_DIR/$INFOPLIST_PATH\"\nif [ -f \"$PLIST\" ]; then\n  /usr/libexec/PlistBuddy -c \"Set :CFBundleShortVersionString $CURRENT\" \"$PLIST\"\n  /usr/libexec/PlistBuddy -c \"Set :CFBundleVersion $CURRENT\" \"$PLIST\"\nfi\nprintf '%s' \"$NEXT\" > \"$VERSION_FILE\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		A6000001 /* Sources */ = {
@@ -573,6 +591,7 @@
 				CODE_SIGN_ENTITLEMENTS = MacEverything/MacEverything.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				INFOPLIST_FILE = MacEverything/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -606,6 +625,7 @@
 				CODE_SIGN_ENTITLEMENTS = MacEverything/MacEverything.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				INFOPLIST_FILE = MacEverything/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",

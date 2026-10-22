@@ -7,48 +7,47 @@ struct ContentResultRow: View {
     @State private var isHovered = false
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 10) {
             fileIcon(for: item.filePath)
                 .resizable()
                 .aspectRatio(contentMode: .fit)
-                .frame(width: 24, height: 24)
+                .frame(width: 26, height: 26)
 
             VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 6) {
-                    Text(item.fileName)
-                        .font(.title3)
-                        .fontWeight(.medium)
-                        .foregroundColor(.primary)
-                        .lineLimit(1)
+                Text(item.fileName)
+                    .font(.system(size: 13))
+                    .foregroundColor(.primary)
+                    .lineLimit(1)
 
-                    Text(directoryPath(item.filePath))
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
+                Text(PathDisplay.shorten(directoryPath(item.filePath)))
+                    .font(.custom("Menlo", size: 11))
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
 
-                highlightMatches(in: item.snippet, keyword: keyword, font: .caption, color: .secondary)
+                highlightMatches(in: item.snippet, keyword: keyword, font: .system(size: 11), color: .secondary)
                     .lineLimit(2)
             }
 
-            Spacer()
+            Spacer(minLength: 12)
         }
-        .padding(.vertical, 5)
-        .padding(.horizontal, 6)
+        .padding(.vertical, 8)
+        .padding(.horizontal, 10)
+        .frame(minHeight: 58)
         .background(
-            RoundedRectangle(cornerRadius: 6)
-                .fill(isHovered ? Color.accentColor.opacity(0.12) : Color.clear)
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(isHovered ? Color.primary.opacity(0.05) : Color.clear)
         )
         .contentShape(Rectangle())
         .onHover { hovering in
             isHovered = hovering
         }
         .contextMenu {
-            Button("Open") { openFile() }
-            Button("Reveal in Finder") { revealInFinder() }
+            Button("打开文件") { openFile() }
+            Button("打开所在的文件夹") { revealInFinder() }
             Divider()
-            Button("Copy Path") { copyPath() }
+            Button("复制文件") { copyFile() }
+            Button("复制路径") { copyPath() }
         }
         .onDrag {
             return NSItemProvider(object: NSURL(fileURLWithPath: item.filePath))
@@ -92,5 +91,12 @@ struct ContentResultRow: View {
     private func copyPath() {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(item.filePath, forType: .string)
+    }
+
+    /// Copy the file itself so it can be pasted in Finder.
+    private func copyFile() {
+        let url = URL(fileURLWithPath: item.filePath)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.writeObjects([url as NSURL])
     }
 }

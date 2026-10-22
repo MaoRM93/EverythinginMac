@@ -56,29 +56,32 @@ struct SearchOptionBadges: View {
         if options.hasActiveOptions {
             HStack(spacing: 4) {
                 if options.isRegex {
-                    badge(".*", color: .purple) { options.isRegex.toggle() }
+                    badge(".*") { options.isRegex.toggle() }
                 }
                 if options.isCaseSensitive {
-                    badge("Aa", color: .orange) { options.isCaseSensitive.toggle() }
+                    badge("Aa") { options.isCaseSensitive.toggle() }
                 }
                 if options.isWholeWord {
-                    badge("W", color: .blue) { options.isWholeWord.toggle() }
+                    badge("W") { options.isWholeWord.toggle() }
                 }
                 if options.isMatchFilename {
-                    badge("FN", color: .green) { options.isMatchFilename.toggle() }
+                    badge("FN") { options.isMatchFilename.toggle() }
                 }
             }
         }
     }
 
-    private func badge(_ text: String, color: Color, action: @escaping () -> Void) -> some View {
+    private func badge(_ text: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(text)
-                .font(.system(size: 11, weight: .bold, design: .monospaced))
-                .foregroundColor(.white)
+                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                .foregroundColor(.secondary)
                 .padding(.horizontal, 5)
                 .padding(.vertical, 2)
-                .background(RoundedRectangle(cornerRadius: 4).fill(color))
+                .background(
+                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        .fill(Color.primary.opacity(0.07))
+                )
         }
         .buttonStyle(.plain)
     }

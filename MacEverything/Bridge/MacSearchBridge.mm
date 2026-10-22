@@ -3,6 +3,7 @@
 #include "PathUtils.h"
 #include "Logger.h"
 #include "HighlightHintExtractor.h"
+#include <atomic>
 
 @implementation MEFileResult
 
@@ -141,21 +142,32 @@
 
     _serviceEngine->onScanProgress = [weakSelf](uint64_t scanned, uint64_t dirs) {
         MacSearchBridge *s = weakSelf;
-        if (!s) return;
+        // Never enqueue work when nobody consumes progress updates. The scanner
+        // reports progress for every directory/file; pushing each report to the
+        // main queue starves AppKit and breaks input-method composition.
+        if (!s || !s.onScanProgress) return;
+
+        // Coalesce to at most 4 updates per second for the same reason.
+        static std::atomic<double> lastProgressTime{0};
+        double now = CFAbsoluteTimeGetCurrent();
+        double previous = lastProgressTime.load(std::memory_order_relaxed);
+        if (now - previous < 0.25) return;
+        lastProgressTime.store(now, std::memory_order_relaxed);
+
         dispatch_async(dispatch_get_main_queue(), ^{
             if (s.onScanProgress) s.onScanProgress(scanned, dirs);
         });
     };
     _serviceEngine->onIndexChanged = [weakSelf]() {
         MacSearchBridge *s = weakSelf;
-        if (!s) return;
+        if (!s || !s.onIndexChanged) return;
         dispatch_async(dispatch_get_main_queue(), ^{
             if (s.onIndexChanged) s.onIndexChanged();
         });
     };
     _serviceEngine->onContentIndexProgress = [weakSelf](uint64_t indexed, uint64_t total) {
         MacSearchBridge *s = weakSelf;
-        if (!s) return;
+        if (!s || !s.onContentIndexProgress) return;
         dispatch_async(dispatch_get_main_queue(), ^{
             if (s.onContentIndexProgress) s.onContentIndexProgress((uint32_t)indexed, (uint32_t)total);
         });

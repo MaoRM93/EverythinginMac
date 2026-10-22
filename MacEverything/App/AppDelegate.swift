@@ -19,6 +19,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             if shouldMinimize {
                 self?.mainSearchWindow?.orderOut(nil)
                 NSApp.hide(nil)
+            } else {
+                self?.configureMainWindow()
             }
         }
         hotkeyManager = HotkeyManager()
@@ -45,40 +47,60 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         MacSearchBridge.shared().prepareForTermination()
     }
 
+    /// Blend the native title bar into the content area while keeping the
+    /// standard traffic lights, fullscreen and drag behaviour intact.
+    private func configureMainWindow() {
+        guard let window = mainSearchWindow else { return }
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.isMovableByWindowBackground = true
+        window.backgroundColor = .windowBackgroundColor
+        WindowPresenter.presentMainWindow()
+        NSApp.activate()
+    }
+
     // MARK: - Status Bar
 
     private func setupStatusBar() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         if let button = statusItem?.button {
-            button.image = NSImage(systemSymbolName: "magnifyingglass", accessibilityDescription: "MacEverything")
+            // Use the app artwork in the menu bar as well.
+            if let icon = NSApplication.shared.applicationIconImage?.copy() as? NSImage {
+                icon.size = NSSize(width: 18, height: 18)
+                icon.isTemplate = false
+                button.image = icon
+            } else {
+                button.image = NSImage(systemSymbolName: "magnifyingglass", accessibilityDescription: "MacEverything")
+            }
         }
 
         let menu = NSMenu()
         menu.delegate = self
-        menu.addItem(NSMenuItem(title: "Show MacEverything", action: #selector(toggleWindow), keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: "显示 MacEverything", action: #selector(toggleWindow), keyEquivalent: ""))
         menu.addItem(.separator())
-        menu.addItem(NSMenuItem(title: "Rebuild Index", action: #selector(rebuildIndex), keyEquivalent: ""))
-        menu.addItem(NSMenuItem(title: "Shortcut Settings...", action: #selector(openShortcutSettings), keyEquivalent: ""))
-        menu.addItem(NSMenuItem(title: "Content Settings...", action: #selector(openContentSettings), keyEquivalent: ""))
-        menu.addItem(NSMenuItem(title: "Search Syntax Help...", action: #selector(openSearchSyntaxHelp), keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: "重建索引", action: #selector(rebuildIndex), keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: "快捷键设置…", action: #selector(openShortcutSettings), keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: "内容设置…", action: #selector(openContentSettings), keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: "搜索语法帮助…", action: #selector(openSearchSyntaxHelp), keyEquivalent: ""))
 
-        let mcpSubmenu = NSMenu(title: "MCP Integration")
+        let mcpSubmenu = NSMenu(title: "MCP 集成")
         for client in MCPClient.allCases {
             let item = NSMenuItem(title: client.displayName, action: #selector(toggleMCPClient(_:)), keyEquivalent: "")
             item.representedObject = client
             mcpMenuItems[client] = item
             mcpSubmenu.addItem(item)
         }
-        let mcpItem = NSMenuItem(title: "MCP Integration", action: nil, keyEquivalent: "")
+        let mcpItem = NSMenuItem(title: "MCP 集成", action: nil, keyEquivalent: "")
         mcpItem.submenu = mcpSubmenu
         menu.addItem(mcpItem)
 
         menu.addItem(.separator())
-        let loginItem = NSMenuItem(title: "Launch at Login", action: #selector(toggleLaunchAtLogin), keyEquivalent: "")
+        let loginItem = NSMenuItem(title: "登录时启动", action: #selector(toggleLaunchAtLogin), keyEquivalent: "")
         launchAtLoginItem = loginItem
         menu.addItem(loginItem)
         menu.addItem(.separator())
-        menu.addItem(NSMenuItem(title: "Quit MacEverything", action: #selector(quitApp), keyEquivalent: "q"))
+        menu.addItem(NSMenuItem(title: "关于 MacEverything…", action: #selector(openAbout), keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: "退出 MacEverything", action: #selector(quitApp), keyEquivalent: "q"))
         statusItem?.menu = menu
     }
 
@@ -87,7 +109,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func menuWillOpen(_ menu: NSMenu) {
         if let item = menu.items.first {
             let isVisible = mainSearchWindow?.isVisible ?? false
-            item.title = isVisible ? "Hide MacEverything" : "Show MacEverything"
+            item.title = isVisible ? "隐藏 MacEverything" : "显示 MacEverything"
         }
         launchAtLoginItem?.state = SMAppService.mainApp.status == .enabled ? .on : .off
         for (client, item) in mcpMenuItems {
@@ -102,7 +124,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             NSApp.hide(nil)
         } else {
             NSApp.activate(ignoringOtherApps: true)
-            mainSearchWindow?.makeKeyAndOrderFront(nil)
+            WindowPresenter.presentMainWindow()
         }
     }
 
@@ -125,6 +147,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func openSearchSyntaxHelp() {
         NSApp.activate(ignoringOtherApps: true)
         SearchSyntaxHelpWindowController.shared.showWindow()
+    }
+
+    @objc private func openAbout() {
+        NSApp.activate(ignoringOtherApps: true)
+        AboutWindowController.shared.showWindow()
     }
 
     @objc private func toggleMCPClient(_ sender: NSMenuItem) {
