@@ -64,10 +64,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func setupStatusBar() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         if let button = statusItem?.button {
-            // Use the app artwork in the menu bar as well.
-            if let icon = NSApplication.shared.applicationIconImage?.copy() as? NSImage {
+            // Line-only template glyph so the icon follows the menu bar's
+            // light/dark appearance automatically.
+            if let icon = NSImage(named: "MenuBarIcon") {
                 icon.size = NSSize(width: 18, height: 18)
-                icon.isTemplate = false
+                icon.isTemplate = true
                 button.image = icon
             } else {
                 button.image = NSImage(systemSymbolName: "magnifyingglass", accessibilityDescription: "MacEverything")
