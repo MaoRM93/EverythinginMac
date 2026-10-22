@@ -2,7 +2,7 @@
   <img src="assets/copyright-banner.svg" alt="版权所有 © 2024–2026 武见（joshua-wu），MIT License；本仓库为个人非商业性质的修改版本，修改部分 © 2026 MaoRM93" width="100%" />
 </p>
 
-> **版权归属**：本项目原始代码与设计版权归原作者 **武见（joshua-wu）** 所有，遵循 [MIT 许可证](LICENSE)。本仓库是基于原项目的个人非商业性质修改版本，修改部分版权归 **MaoRM93** 所有，同样以 MIT 许可证公开。本版本不代表原作者，也与原作者无隶属关系。
+> **版权归属**：本项目原始代码与设计版权归原作者 **武见（joshua-wu）** 所有，遵循 [MIT 许可证](LICENSE)。本仓库是基于原项目的个人非商业性质修改版本，修改部分版权归 **MaoRM93** 所有，同样以 MIT 许可证公开。本版本不代表原作者，也与原作者无隶属关系，属于独立的分支。非常感谢原作者的贡献！！
 
 <p align="center">
   <img src="MacEverything/Assets.xcassets/AppIcon.appiconset/icon_256.png" alt="MacEverything" width="128" />
@@ -28,11 +28,7 @@
 
 ---
 
-<p align="center">
-  <img src="assets/screen-shot.jpg" alt="MacEverything Screenshot" width="720" />
-</p>
-
-## 本版本更新内容（MaoRM93 · 101.0.0.110）
+## 本分支版本更新内容（101.0.0.110）
 
 本仓库基于 [joshua-wu/MacEverything](https://github.com/joshua-wu/MacEverything) 修改，版本 **101.0.0.110**。相对原项目的主要变更：
 
