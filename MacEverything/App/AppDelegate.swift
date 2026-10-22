@@ -25,6 +25,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         hotkeyManager = HotkeyManager()
         hotkeyManager?.register()
+        NotificationCenter.default.addObserver(self, selector: #selector(showStatusIcon),
+                                               name: .showStatusBarIcon, object: nil)
+        UpdateService.shared.start()
         setupStatusBar()
     }
 
@@ -61,7 +64,19 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     // MARK: - Status Bar
 
+    private static let statusIconHiddenKey = "StatusIconHiddenPermanently"
+
     private func setupStatusBar() {
+        guard !UserDefaults.standard.bool(forKey: Self.statusIconHiddenKey) else { return }
+        createStatusItem()
+    }
+
+    private func createStatusItem() {
+        guard statusItem == nil else {
+            statusItem?.isVisible = true
+            return
+        }
+
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         if let button = statusItem?.button {
             // Line-only template glyph so the icon follows the menu bar's
@@ -99,6 +114,20 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let loginItem = NSMenuItem(title: "登录时启动", action: #selector(toggleLaunchAtLogin), keyEquivalent: "")
         launchAtLoginItem = loginItem
         menu.addItem(loginItem)
+
+        let hideSubmenu = NSMenu(title: "隐藏菜单栏图标")
+        let hideOnceItem = NSMenuItem(title: "隐藏一次（下次启动恢复）",
+                                      action: #selector(hideStatusIconOnce), keyEquivalent: "")
+        hideOnceItem.target = self
+        hideSubmenu.addItem(hideOnceItem)
+        let hideForeverItem = NSMenuItem(title: "永久隐藏",
+                                         action: #selector(hideStatusIconPermanently), keyEquivalent: "")
+        hideForeverItem.target = self
+        hideSubmenu.addItem(hideForeverItem)
+        let hideItem = NSMenuItem(title: "隐藏菜单栏图标", action: nil, keyEquivalent: "")
+        hideItem.submenu = hideSubmenu
+        menu.addItem(hideItem)
+
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "关于 MacEverything…", action: #selector(openAbout), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "退出 MacEverything", action: #selector(quitApp), keyEquivalent: "q"))
@@ -153,6 +182,27 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func openAbout() {
         NSApp.activate(ignoringOtherApps: true)
         AboutWindowController.shared.showWindow()
+    }
+
+    // MARK: - Status Icon Visibility
+
+    @objc private func hideStatusIconOnce() {
+        // 只在本次运行期间隐藏，下次启动自动恢复。
+        statusItem?.isVisible = false
+    }
+
+    @objc private func hideStatusIconPermanently() {
+        UserDefaults.standard.set(true, forKey: Self.statusIconHiddenKey)
+        statusItem?.isVisible = false
+    }
+
+    @objc func showStatusIcon() {
+        UserDefaults.standard.set(false, forKey: Self.statusIconHiddenKey)
+        if statusItem == nil {
+            createStatusItem()
+        } else {
+            statusItem?.isVisible = true
+        }
     }
 
     @objc private func toggleMCPClient(_ sender: NSMenuItem) {

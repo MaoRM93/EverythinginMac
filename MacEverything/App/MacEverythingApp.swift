@@ -25,6 +25,12 @@ struct MacEverythingApp: App {
                 Button("关于 MacEverything") {
                     AboutWindowController.shared.showWindow()
                 }
+                Button("检查更新…") {
+                    UpdateService.shared.checkManually()
+                }
+                Button("显示菜单栏图标") {
+                    NotificationCenter.default.post(name: .showStatusBarIcon, object: nil)
+                }
             }
 
             CommandMenu("搜索") {
@@ -83,6 +89,7 @@ struct MacEverythingApp: App {
 extension Notification.Name {
     static let rebuildIndex = Notification.Name("rebuildIndex")
     static let focusSearchField = Notification.Name("focusSearchField")
+    static let showStatusBarIcon = Notification.Name("showStatusBarIcon")
 }
 
 // MARK: - About
@@ -102,6 +109,13 @@ struct AboutView: View {
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
+
+            Button("检查更新…") {
+                UpdateService.shared.checkManually()
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .padding(.top, 2)
 
             Text("本地磁盘文件名搜索工具")
                 .font(.callout)
