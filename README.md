@@ -28,7 +28,9 @@
 
 ---
 
-## 本分支版本更新内容（101.0.0.110）
+## 本分支版本更新内容（10x.x.x.xxx 版本）
+![Uploading image.png…]()
+
 
 本仓库基于 [joshua-wu/MacEverything](https://github.com/joshua-wu/MacEverything) 修改，版本 **101.0.0.110**。相对原项目的主要变更：
 
