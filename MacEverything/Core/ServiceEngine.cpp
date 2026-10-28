@@ -106,6 +106,7 @@ void ServiceEngine::startFullScan(StartupCallback completion) {
     dispatch_group_async(backgroundGroup_, dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
         auto scanStart = std::chrono::steady_clock::now();
         auto scanner = std::make_shared<DirectoryScanner>();
+        scanner->setExcludedPaths(this->excludedPathsSnapshot());
 
         // Progress polling timer
         dispatch_source_t timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0,
@@ -330,6 +331,7 @@ void ServiceEngine::backgroundSyncEngine(
         LOG_WARN("ServiceEngine", "FSEvents replay failed — background full scan");
 
         auto scanner = std::make_shared<DirectoryScanner>();
+        scanner->setExcludedPaths(this->excludedPathsSnapshot());
 
         // Progress reporting
         std::weak_ptr<DirectoryScanner> scannerWeak = scanner;
@@ -394,6 +396,42 @@ void ServiceEngine::backgroundSyncEngine(
         });
         if (this->onIndexChanged) this->onIndexChanged();
     });
+}
+
+// ═══════════════════════════════════════════════════════
+//  Excluded paths
+// ═══════════════════════════════════════════════════════
+
+void ServiceEngine::setExcludedPaths(const std::vector<std::string>& paths) {
+    std::vector<std::string> normalized;
+    normalized.reserve(paths.size());
+    for (auto path : paths) {
+        if (path.size() > 1) {
+            while (path.size() > 1 && path.back() == '/') path.pop_back();
+        }
+        if (!path.empty() && path != "/") {
+            normalized.push_back(std::move(path));
+        }
+    }
+    std::unique_lock lock(excludedMutex_);
+    excludedPaths_ = std::move(normalized);
+}
+
+bool ServiceEngine::isExcludedPath(const std::string& path) const {
+    std::shared_lock lock(excludedMutex_);
+    for (const auto& prefix : excludedPaths_) {
+        if (path.size() < prefix.size()) continue;
+        if (path.compare(0, prefix.size(), prefix) != 0) continue;
+        if (path.size() == prefix.size() || path[prefix.size()] == '/') {
+            return true;
+        }
+    }
+    return false;
+}
+
+std::vector<std::string> ServiceEngine::excludedPathsSnapshot() const {
+    std::shared_lock lock(excludedMutex_);
+    return excludedPaths_;
 }
 
 // ═══════════════════════════════════════════════════════

@@ -45,7 +45,17 @@ final class FileIconCache {
         cache.countLimit = 500
     }
 
+    /// Dedicated artwork for symlinks ("快捷方式"). macOS draws a generic
+    /// document glyph with a small arrow badge for these, which reads as an
+    /// unfinished file icon in the result list.
+    private static let shortcutIcon: NSImage? = NSImage(named: "ShortcutIcon")
+
     func icon(for item: FileItem) -> NSImage {
+        // Symlinks are their own visual category; every one shares an icon.
+        if item.type == 3, let shortcut = Self.shortcutIcon {
+            return shortcut
+        }
+
         // Detect app bundles by name suffix (handles both type=5 and legacy type=2)
         let isApp = item.name.hasSuffix(".app")
 
@@ -87,23 +97,59 @@ final class FileIconCache {
     }
 }
 
+/// File actions shared by the result rows and the keyboard handler.
+enum FileActions {
+    static func open(_ item: FileItem) {
+        let fullPath = item.path + "/" + item.name
+        if item.type == 5 {
+            let url = URL(fileURLWithPath: fullPath)
+            NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
+        } else {
+            if !NSWorkspace.shared.open(URL(fileURLWithPath: fullPath)) {
+                NSSound.beep()
+            }
+        }
+    }
+
+    static func reveal(_ item: FileItem) {
+        let fullPath = item.path + "/" + item.name
+        NSWorkspace.shared.selectFile(fullPath, inFileViewerRootedAtPath: "")
+    }
+
+    static func copyPath(_ item: FileItem) {
+        let fullPath = item.path + "/" + item.name
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(fullPath, forType: .string)
+    }
+
+    /// Copy the file itself so it can be pasted in Finder.
+    static func copyFile(_ item: FileItem) {
+        let fullPath = item.path + "/" + item.name
+        let url = URL(fileURLWithPath: fullPath)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.writeObjects([url as NSURL])
+    }
+}
+
 struct ResultRow: View {
     let item: FileItem
     let hints: [HighlightHint]
+    var isSelected: Bool = false
+    var onSelect: () -> Void = {}
     @State private var isHovered = false
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 11) {
             fileIcon(for: item)
                 .resizable()
                 .aspectRatio(contentMode: .fit)
-                .frame(width: 26, height: 26)
+                .frame(width: 22, height: 22)
 
             VStack(alignment: .leading, spacing: 3) {
                 let highlighted = highlightCrossMatches(
                     path: PathDisplay.shorten(item.path), name: item.name, hints: hints,
-                    nameFont: .system(size: 13), nameColor: .primary,
-                    pathFont: .custom("Menlo", size: 11), pathColor: .secondary)
+                    nameFont: .system(size: 15), nameColor: .primary,
+                    pathFont: .custom("Menlo", size: 12), pathColor: .secondary)
                 highlighted.nameText
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -118,27 +164,28 @@ struct ResultRow: View {
             Text(item.type == 1 && item.size > 0 ? formatSize(item.size) : "")
                 .font(.system(size: 11))
                 .monospacedDigit()
-                .foregroundColor(.secondary)
+                .foregroundColor(.secondary.opacity(0.85))
                 .lineLimit(1)
                 .frame(width: 64, alignment: .trailing)
         }
-        .padding(.vertical, 8)
-        .padding(.horizontal, 10)
-        .frame(minHeight: 58)
+        .padding(.horizontal, 16)
+        .frame(minHeight: 60)
         .background(
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(isHovered ? Color.primary.opacity(0.05) : Color.clear)
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(isSelected
+                      ? Color.accentColor.opacity(0.10)
+                      : (isHovered ? Color.primary.opacity(0.05) : Color.clear))
         )
         .contentShape(Rectangle())
         .onHover { hovering in
             isHovered = hovering
         }
         .contextMenu {
-            Button("打开文件") { openFile(item) }
-            Button("打开所在的文件夹") { revealInFinder(item) }
+            Button("打开文件") { FileActions.open(item) }
+            Button("打开所在的文件夹") { FileActions.reveal(item) }
             Divider()
-            Button("复制文件") { copyFile(item) }
-            Button("复制路径") { copyPath(item) }
+            Button("复制文件") { FileActions.copyFile(item) }
+            Button("复制路径") { FileActions.copyPath(item) }
         }
         .onDrag {
             let fullPath = item.path + "/" + item.name
@@ -146,14 +193,15 @@ struct ResultRow: View {
         }
         .onTapGesture(count: 2) {
             if NSEvent.modifierFlags.contains(.command) {
-                revealInFinder(item)
+                FileActions.reveal(item)
             } else {
-                openFile(item)
+                FileActions.open(item)
             }
         }
         .onTapGesture(count: 1) {
+            onSelect()
             if NSEvent.modifierFlags.contains(.command) {
-                revealInFinder(item)
+                FileActions.reveal(item)
             }
         }
         .accessibilityIdentifier("resultRow")
@@ -173,36 +221,5 @@ struct ResultRow: View {
         }
         if unitIndex == 0 { return "\(bytes) B" }
         return String(format: "%.1f %@", size, units[unitIndex])
-    }
-
-    private func openFile(_ item: FileItem) {
-        let fullPath = item.path + "/" + item.name
-        if item.type == 5 {
-            let url = URL(fileURLWithPath: fullPath)
-            NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
-        } else {
-            if !NSWorkspace.shared.open(URL(fileURLWithPath: fullPath)) {
-                NSSound.beep()
-            }
-        }
-    }
-
-    private func revealInFinder(_ item: FileItem) {
-        let fullPath = item.path + "/" + item.name
-        NSWorkspace.shared.selectFile(fullPath, inFileViewerRootedAtPath: "")
-    }
-
-    private func copyPath(_ item: FileItem) {
-        let fullPath = item.path + "/" + item.name
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(fullPath, forType: .string)
-    }
-
-    /// Copy the file itself so it can be pasted in Finder.
-    private func copyFile(_ item: FileItem) {
-        let fullPath = item.path + "/" + item.name
-        let url = URL(fileURLWithPath: fullPath)
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.writeObjects([url as NSURL])
     }
 }

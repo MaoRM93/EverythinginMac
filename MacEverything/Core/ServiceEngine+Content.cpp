@@ -93,7 +93,9 @@ void ServiceEngine::startContentIndexing() {
                 fileEntries->reserve(indexedIndices.size());
                 engine->forEachRecordWithPath(indexedIndices, [&](uint32_t idx, const FileRecord& r, const std::string& path) {
                     if (r.type != 1) return;
-                    fileEntries->push_back({idx, SearchEngine::makeFullPath(path, r.name), r.modTime});
+                    std::string fullPath = SearchEngine::makeFullPath(path, r.name);
+                    if (this->isExcludedPath(fullPath)) return;
+                    fileEntries->push_back({idx, std::move(fullPath), r.modTime});
                 });
                 LOG_INFO("ServiceEngine", "Content indexing: incremental mode, "
                          << fileEntries->size() << " previously-indexed files to check");
@@ -107,7 +109,9 @@ void ServiceEngine::startContentIndexing() {
                 fileEntries->reserve(total);
                 engine->forEachRecordWithPath(allIndices, [&](uint32_t idx, const FileRecord& r, const std::string& path) {
                     if (r.type != 1) return;
-                    fileEntries->push_back({idx, SearchEngine::makeFullPath(path, r.name), r.modTime});
+                    std::string fullPath = SearchEngine::makeFullPath(path, r.name);
+                    if (this->isExcludedPath(fullPath)) return;
+                    fileEntries->push_back({idx, std::move(fullPath), r.modTime});
                 });
                 LOG_INFO("ServiceEngine", "Content indexing: full scan mode, "
                          << fileEntries->size() << " regular files to index");

@@ -24,12 +24,17 @@ enum WindowPresenter {
             let size = window.frame.size
             let origin = NSPoint(
                 x: visible.midX - size.width / 2,
-                y: visible.midY - size.height / 2
+                y: visible.maxY - size.height - visible.height * 0.18
             )
             window.setFrame(NSRect(origin: origin, size: size), display: false)
         }
 
         window.makeKeyAndOrderFront(nil)
+
+        // The window is now key, so the search field can take first responder.
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(name: .focusSearchField, object: nil)
+        }
     }
 }
 

@@ -40,6 +40,10 @@ public:
     bool isCancelled() const { return cancelled_.load(std::memory_order_relaxed); }
     const Stats& getStats() const { return stats_; }
 
+    /// Directories (and everything below them) to skip entirely.
+    void setExcludedPaths(std::vector<std::string> paths);
+    bool isExcluded(const std::string& path) const;
+
     // Move all per-thread results into a single flat vector. Call after scan completes.
     std::vector<FileRecord> takeResults();
 
@@ -57,6 +61,7 @@ private:
 
     std::vector<std::vector<FileRecord>> threadResults_;
     Stats stats_;
+    std::vector<std::string> excludedPaths_;
 
     void workerThread(int threadIndex);
     void scanDirectory(const std::string& dirPath, char* buffer, int threadIndex);

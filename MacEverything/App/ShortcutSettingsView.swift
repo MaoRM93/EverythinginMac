@@ -8,74 +8,58 @@ struct ShortcutSettingsView: View {
     @State private var keyCode: UInt32 = DefaultHotkey.keyCode
 
     var body: some View {
-        VStack(spacing: 20) {
-            Text("全局快捷键设置")
-                .font(.title2)
-                .fontWeight(.semibold)
-
-            Text("点击下方按钮并按下想用的组合键，设置用于显示 MacEverything 并聚焦搜索框的全局快捷键。")
-                .font(.body)
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 360)
-
-            VStack(spacing: 12) {
-                Text("当前快捷键")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-
-                Button(action: {
-                    isRecording.toggle()
-                }) {
-                    Text(isRecording ? "请按下组合键…" : currentShortcut)
-                        .font(.title3)
-                        .fontWeight(.medium)
-                        .foregroundColor(isRecording ? .accentColor : .primary)
-                        .frame(minWidth: 200, minHeight: 40)
-                        .background(
-                            RoundedRectangle(cornerRadius: 8)
-                                .stroke(isRecording ? Color.accentColor : Color.gray.opacity(0.4), lineWidth: isRecording ? 2 : 1)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 8)
-                                        .fill(Color(nsColor: .controlBackgroundColor))
-                                )
-                        )
-                }
-                .buttonStyle(.plain)
-            }
-
-            if isRecording {
-                ShortcutRecorderView(
-                    onKeyCombo: { newKeyCode, newModifiers in
-                        keyCode = newKeyCode
-                        modifiers = newModifiers
-                        currentShortcut = describeShortcut(keyCode: newKeyCode, modifiers: newModifiers)
-                        isRecording = false
-                        saveAndApply()
-                    },
-                    onCancel: {
-                        isRecording = false
+        Form {
+            Section {
+                LabeledContent {
+                    Button {
+                        isRecording.toggle()
+                    } label: {
+                        Text(isRecording ? "请按下组合键…" : currentShortcut)
+                            .fontWeight(.medium)
+                            .foregroundStyle(isRecording ? Color.accentColor : Color.primary)
+                            .frame(minWidth: 110)
                     }
-                )
-                .frame(width: 0, height: 0)
-            }
-
-            HStack(spacing: 16) {
-                Button("恢复默认（⌘⇧F）") {
-                    keyCode = DefaultHotkey.keyCode
-                    modifiers = DefaultHotkey.modifiers
-                    currentShortcut = describeShortcut(keyCode: keyCode, modifiers: modifiers)
-                    saveAndApply()
+                    .controlSize(.small)
+                } label: {
+                    SettingsRowLabel(title: "当前快捷键",
+                                     detail: "点击右侧按钮，然后按下新的组合键。")
                 }
 
-                Button("关闭") {
-                    NSApp.keyWindow?.close()
+                LabeledContent {
+                    Button("恢复默认") {
+                        keyCode = DefaultHotkey.keyCode
+                        modifiers = DefaultHotkey.modifiers
+                        currentShortcut = describeShortcut(keyCode: keyCode, modifiers: modifiers)
+                        saveAndApply()
+                    }
+                    .controlSize(.small)
+                } label: {
+                    SettingsRowLabel(title: "恢复默认",
+                                     detail: "默认快捷键为 ⌘⇧F。")
                 }
-                .keyboardShortcut(.cancelAction)
+
+                if isRecording {
+                    ShortcutRecorderView(
+                        onKeyCombo: { newKeyCode, newModifiers in
+                            keyCode = newKeyCode
+                            modifiers = newModifiers
+                            currentShortcut = describeShortcut(keyCode: newKeyCode, modifiers: newModifiers)
+                            isRecording = false
+                            saveAndApply()
+                        },
+                        onCancel: {
+                            isRecording = false
+                        }
+                    )
+                    .frame(width: 0, height: 0)
+                }
+            } header: {
+                Text("全局快捷键")
+            } footer: {
+                Text("按下组合键可随时显示 MacEverything 并聚焦搜索框。")
             }
         }
-        .padding(30)
-        .frame(width: 440, height: 280)
+        .formStyle(.grouped)
         .onAppear {
             loadSaved()
         }

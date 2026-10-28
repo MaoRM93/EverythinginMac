@@ -32,6 +32,7 @@
         info.fileIndex = match.fileIndex;
         info.name = std::move(record.name);
         info.fullPath = SearchEngine::makeFullPath(record.path, info.name);
+        if (_serviceEngine->isExcludedPath(info.fullPath)) continue;
         info.fileType = record.type;
         candidates.push_back(std::move(info));
     }

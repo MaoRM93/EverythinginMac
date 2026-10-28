@@ -61,6 +61,10 @@ NS_ASSUME_NONNULL_BEGIN
                      walPath:(NSString *)walPath
                   completion:(void (^)(uint32_t totalRecords, BOOL didFullScan))completion;
 
+/// Directories to skip during scanning and hide from search results.
+/// Paths are treated as directory prefixes.
+- (void)setExcludedPaths:(NSArray<NSString *> *)paths;
+
 /// Compact the index: write new base snapshot, clear WAL.
 - (void)compactIndex;
 

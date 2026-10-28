@@ -25,6 +25,10 @@ void ServiceEngine::applyFSEvents(
 
         if (isInsideAppBundle(path)) continue;
 
+        // Never bring records back through FSEvents for directories the user
+        // asked us not to index.
+        if (isExcludedPath(path)) continue;
+
         bool itemRemoved = (flags & kFSEventStreamEventFlagItemRemoved) != 0;
         bool itemRenamed = (flags & kFSEventStreamEventFlagItemRenamed) != 0;
 
@@ -307,11 +311,13 @@ void ServiceEngine::flushPendingRescans() {
 void ServiceEngine::rescanSubtree(const std::string& dir) {
     auto engine = safeEngine();
     if (!engine) return;
+    if (isExcludedPath(dir)) return;
 
     dispatch_async(mutationQueue_, ^{
         if (shuttingDown_.load(std::memory_order_relaxed)) return;
 
         auto scanner = std::make_shared<DirectoryScanner>();
+        scanner->setExcludedPaths(this->excludedPathsSnapshot());
         scanner->scan(dir);
         auto freshRecords = scanner->takeResults();
 

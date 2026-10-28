@@ -68,6 +68,25 @@ void DirectoryScanner::scan(const std::string& rootPath) {
     }
 }
 
+void DirectoryScanner::setExcludedPaths(std::vector<std::string> paths) {
+    std::vector<std::string> normalized;
+    normalized.reserve(paths.size());
+    for (auto path : paths) {
+        while (path.size() > 1 && path.back() == '/') path.pop_back();
+        if (!path.empty() && path != "/") normalized.push_back(std::move(path));
+    }
+    excludedPaths_ = std::move(normalized);
+}
+
+bool DirectoryScanner::isExcluded(const std::string& path) const {
+    for (const auto& prefix : excludedPaths_) {
+        if (path.size() < prefix.size()) continue;
+        if (path.compare(0, prefix.size(), prefix) != 0) continue;
+        if (path.size() == prefix.size() || path[prefix.size()] == '/') return true;
+    }
+    return false;
+}
+
 std::vector<FileRecord> DirectoryScanner::takeResults() {
     std::vector<FileRecord> merged;
     size_t total = 0;
@@ -265,11 +284,17 @@ void DirectoryScanner::scanDirectory(const std::string& dirPath, char* buffer, i
                     continue;
                 }
 
-                if (tryVisitDirectory(devid, fileid)) {
-                    std::string childPath = dirPath;
-                    if (childPath.back() != '/') childPath += '/';
-                    childPath += name;
+                std::string childPath = dirPath;
+                if (childPath.back() != '/') childPath += '/';
+                childPath += name;
 
+                // User-excluded directories are neither recorded nor traversed.
+                if (isExcluded(childPath)) {
+                    entry = nextEntry;
+                    continue;
+                }
+
+                if (tryVisitDirectory(devid, fileid)) {
                     // Detect .app bundles — record as type 5, skip recursion
                     size_t nameLen = strlen(name);
                     bool isAppBundle = (nameLen > 4 &&

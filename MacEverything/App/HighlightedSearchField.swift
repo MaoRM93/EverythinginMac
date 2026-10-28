@@ -162,7 +162,10 @@ struct HighlightedSearchField: NSViewRepresentable {
     var placeholder: String = ""
     var ghostSuggestion: String?
     var isFocused: FocusState<Bool>.Binding
-    var onTab: (() -> Bool)?
+    var isListFocused: Bool = false
+    var onTab: ((Bool) -> Bool)?
+    var onDownArrow: (() -> Bool)?
+    var onListKey: ((NSEvent) -> Bool)?
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
@@ -179,8 +182,9 @@ struct HighlightedSearchField: NSViewRepresentable {
         let textView = HighlightedNSTextView()
         textView.isRichText = false
         textView.allowsUndo = true
-        textView.font = .systemFont(ofSize: 18)
+        textView.font = .systemFont(ofSize: 17)
         textView.textColor = .labelColor
+        textView.insertionPointColor = .labelColor
         textView.backgroundColor = .clear
         textView.drawsBackground = false
         textView.isVerticallyResizable = false
@@ -188,13 +192,13 @@ struct HighlightedSearchField: NSViewRepresentable {
         textView.textContainer?.containerSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         textView.textContainer?.widthTracksTextView = false
         textView.textContainer?.heightTracksTextView = false
-        // Zero horizontal insets and a small symmetric vertical inset keep the
-        // typed text vertically centred with the magnifying glass icon.
-        textView.textContainerInset = NSSize(width: 0, height: 2)
+        // Insets are computed in `layout()` so the single line stays optically
+        // centred in the field, aligned with the magnifying glass icon.
+        textView.textContainerInset = NSSize(width: 0, height: 0)
         textView.textContainer?.lineFragmentPadding = 0
-        textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: 26)
-        textView.minSize = NSSize(width: 0, height: 26)
-        textView.frame = NSRect(x: 0, y: 0, width: 10, height: 26)
+        textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: 24)
+        textView.minSize = NSSize(width: 0, height: 24)
+        textView.frame = NSRect(x: 0, y: 0, width: 10, height: 24)
         textView.isEditable = true
         textView.isSelectable = true
         textView.delegate = context.coordinator
@@ -205,12 +209,20 @@ struct HighlightedSearchField: NSViewRepresentable {
 
         // Tab key handling
         textView.onTabKey = context.coordinator.handleTab
+        textView.onDownArrowKey = context.coordinator.handleDownArrow
+        textView.onListKey = context.coordinator.handleListKey
 
         // Escape key handling: clear query, then release focus
         textView.onEscapeKey = context.coordinator.handleEscape
 
         // Placeholder
         textView.placeholderString = placeholder
+
+        // Keep the SwiftUI focus flag in sync when AppKit gives the text view
+        // first responder on its own.
+        textView.onFocusChanged = { [weak coordinator = context.coordinator] focused in
+            coordinator?.parent.isFocused.wrappedValue = focused
+        }
 
         scrollView.documentView = textView
         context.coordinator.textView = textView
@@ -244,6 +256,14 @@ struct HighlightedSearchField: NSViewRepresentable {
         if textView.ghostSuggestion != ghostSuggestion {
             textView.ghostSuggestion = ghostSuggestion
         }
+
+        // Caret follows the visual focus: hidden while the result list owns
+        // the keyboard selection, visible while the search field is active.
+        if textView.isListFocused != isListFocused {
+            textView.isListFocused = isListFocused
+        }
+
+        context.coordinator.parent = self
 
         // Handle focus
         if isFocused.wrappedValue && textView.window != nil && textView.window?.firstResponder !== textView {
@@ -286,14 +306,23 @@ struct HighlightedSearchField: NSViewRepresentable {
             }
         }
 
-        func handleTab() -> Bool {
-            return parent.onTab?() ?? false
+        func handleTab(shift: Bool) -> Bool {
+            return parent.onTab?(shift) ?? false
+        }
+
+        func handleDownArrow() -> Bool {
+            return parent.onDownArrow?() ?? false
+        }
+
+        func handleListKey(_ event: NSEvent) -> Bool {
+            return parent.onListKey?(event) ?? false
         }
 
         func handleEscape() {
             guard let textView else { return }
             if textView.string.isEmpty {
-                textView.window?.makeFirstResponder(nil)
+                // Empty query: Escape hides the Spotlight-style window.
+                textView.window?.orderOut(nil)
                 parent.isFocused.wrappedValue = false
             } else {
                 textView.string = ""
@@ -306,7 +335,7 @@ struct HighlightedSearchField: NSViewRepresentable {
             guard let textStorage = textView.textStorage else { return }
             let fullRange = NSRange(location: 0, length: textStorage.length)
             let text = textStorage.string
-            let font = NSFont.systemFont(ofSize: 18)
+            let font = NSFont.systemFont(ofSize: 17)
 
             // Reset to default style
             textStorage.beginEditing()
@@ -363,11 +392,86 @@ private final class SearchScrollView: NSScrollView {
 // MARK: - Custom NSTextView subclass for Tab key handling
 
 class HighlightedNSTextView: NSTextView {
-    var onTabKey: (() -> Bool)?
+    var onTabKey: ((Bool) -> Bool)?
+    var onDownArrowKey: (() -> Bool)?
+    var onListKey: ((NSEvent) -> Bool)?
     var onEscapeKey: (() -> Void)?
+    var onFocusChanged: ((Bool) -> Void)?
     var placeholderString: String = ""
+    private var focusObservers: [NSObjectProtocol] = []
+
+    var isListFocused: Bool = false {
+        didSet {
+            insertionPointColor = isListFocused ? .clear : .labelColor
+            needsDisplay = true
+        }
+    }
+
     var ghostSuggestion: String? {
         didSet { needsDisplay = true }
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        for observer in focusObservers {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        focusObservers.removeAll()
+
+        guard let window else { return }
+
+        // The search field is the primary control, so give it focus as soon as
+        // the window becomes key (launch, hotkey summon, app re-activation).
+        focusObservers.append(NotificationCenter.default.addObserver(
+            forName: NSWindow.didBecomeKeyNotification, object: window, queue: .main
+        ) { [weak self] _ in
+            self?.focusIfPossible()
+        })
+        focusObservers.append(NotificationCenter.default.addObserver(
+            forName: .focusSearchField, object: nil, queue: .main
+        ) { [weak self] _ in
+            self?.focusIfPossible()
+        })
+
+        if window.isKeyWindow {
+            DispatchQueue.main.async { [weak self] in
+                self?.focusIfPossible()
+            }
+        }
+    }
+
+    /// AppKit owns first responder here; SwiftUI's focus state alone cannot
+    /// reliably move it into a view wrapped by `NSViewRepresentable`.
+    private func focusIfPossible() {
+        guard let window, window.isKeyWindow else { return }
+        if window.firstResponder !== self {
+            window.makeFirstResponder(self)
+        }
+        onFocusChanged?(window.firstResponder === self)
+    }
+
+    deinit {
+        for observer in focusObservers {
+            NotificationCenter.default.removeObserver(observer)
+        }
+    }
+
+    override func layout() {
+        super.layout()
+        centerTextVertically()
+    }
+
+    /// A single-line NSTextView draws from the top inset, which made the text
+    /// sit lower than the magnifying glass when the field height changed.
+    /// Recompute the inset from the actual bounds so the placeholder, the
+    /// typed text and the icon all share one optical centre line.
+    private func centerTextVertically() {
+        let lineHeight = NSLayoutManager().defaultLineHeight(for: font ?? NSFont.systemFont(ofSize: 17))
+        let inset = max(0, (bounds.height - lineHeight) / 2)
+        if abs(textContainerInset.height - inset) > 0.25 {
+            textContainerInset = NSSize(width: 0, height: inset)
+            needsDisplay = true
+        }
     }
 
     override func keyDown(with event: NSEvent) {
@@ -376,14 +480,27 @@ class HighlightedNSTextView: NSTextView {
             super.keyDown(with: event)
             return
         }
-        // Handle Tab key for ghost suggestion
-        if event.keyCode == 48 { // Tab key
-            if let handler = onTabKey, handler() {
-                return // Tab was consumed by ghost suggestion
+
+        // The search text view stays first responder while the result list
+        // owns the keyboard selection, so navigation is handled here.
+        if let listHandler = onListKey, listHandler(event) {
+            return
+        }
+
+        // Tab moves focus to the result list (or back from it).
+        if event.keyCode == 48 {
+            if let handler = onTabKey, handler(event.modifierFlags.contains(.shift)) {
+                return
             }
         }
-        // Handle Escape: clear query, then release focus
-        if event.keyCode == 53 { // Escape key
+
+        // Arrow down from the search field selects the first result.
+        if event.keyCode == 125, let handler = onDownArrowKey, handler() {
+            return
+        }
+
+        // Handle Escape: clear query, then hide the window.
+        if event.keyCode == 53 {
             onEscapeKey?()
             return
         }
@@ -394,7 +511,7 @@ class HighlightedNSTextView: NSTextView {
         // Draw ghost suggestion behind the real text (before super.draw paints the typed text)
         if let ghost = ghostSuggestion, !ghost.isEmpty, !string.isEmpty {
             let attrs: [NSAttributedString.Key: Any] = [
-                .font: font ?? NSFont.systemFont(ofSize: 18),
+                .font: font ?? NSFont.systemFont(ofSize: 17),
                 .foregroundColor: NSColor.secondaryLabelColor.withAlphaComponent(0.4),
             ]
             let ghostStr = NSAttributedString(string: ghost, attributes: attrs)
@@ -411,7 +528,7 @@ class HighlightedNSTextView: NSTextView {
         // Draw placeholder when empty
         if string.isEmpty && !placeholderString.isEmpty {
             let attrs: [NSAttributedString.Key: Any] = [
-                .font: font ?? NSFont.systemFont(ofSize: 18),
+                .font: NSFont.systemFont(ofSize: 17),
                 .foregroundColor: NSColor.placeholderTextColor,
             ]
             let placeholder = NSAttributedString(string: placeholderString, attributes: attrs)

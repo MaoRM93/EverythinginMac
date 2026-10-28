@@ -11,6 +11,7 @@
 #include <atomic>
 #include <shared_mutex>
 #include <set>
+#include <vector>
 #include <chrono>
 #include <functional>
 #include <string>
@@ -54,6 +55,11 @@ public:
     void rescanSubtree(const std::string& dir);
     void rebuildContentIndex();
     void compactIndex();
+
+    /// Directories the user chose not to index. Paths are matched as
+    /// directory prefixes, so "/System" also covers everything below it.
+    void setExcludedPaths(const std::vector<std::string>& paths);
+    bool isExcludedPath(const std::string& path) const;
 
     // ── Thread-safe accessors ──
     std::shared_ptr<SearchEngine> safeEngine();
@@ -125,6 +131,11 @@ private:
     std::shared_mutex contentMutex_;
     std::shared_mutex persistenceMutex_;
     std::shared_mutex contentPersistenceMutex_;
+    mutable std::shared_mutex excludedMutex_;
+    std::vector<std::string> excludedPaths_;
+
+    /// Snapshot of the exclusion list, safe to hand to worker threads.
+    std::vector<std::string> excludedPathsSnapshot() const;
 
     // ── Dispatch queues & groups ──
     dispatch_queue_t mutationQueue_;

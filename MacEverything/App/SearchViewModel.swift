@@ -109,6 +109,11 @@ class SearchViewModel: ObservableObject {
     /// read why they are needed.
     func start() {
         guard !started else { return }
+        // Scanning "/" without Full Disk Access would make macOS show one TCC
+        // permission alert per protected folder. The app asks for the single
+        // Full Disk Access grant during onboarding instead, so the engine must
+        // never start before it is in place.
+        guard PermissionHelper.hasFullDiskAccess else { return }
         started = true
         startIncremental()
     }
@@ -122,6 +127,7 @@ class SearchViewModel: ObservableObject {
     }
 
     func startIncremental() {
+        guard PermissionHelper.hasFullDiskAccess else { return }
         isScanning = true
 
         bridge.onContentIndexProgress = { [weak self] indexed, total in
@@ -151,6 +157,8 @@ class SearchViewModel: ObservableObject {
                 self?.onIndexChanged()
             }
         }
+
+        bridge.setExcludedPaths(ExcludedPathsStore.shared.paths)
 
         bridge.startIncremental(from: "/",
                                 cachePath: Self.cachePath,
@@ -200,7 +208,7 @@ class SearchViewModel: ObservableObject {
     }
 
     func rebuildIndex() {
-        guard started, !isScanning else { return }
+        guard started, !isScanning, PermissionHelper.hasFullDiskAccess else { return }
         searchTask?.cancel()
         indexChangeTask?.cancel()
         searchGeneration &+= 1
@@ -219,6 +227,19 @@ class SearchViewModel: ObservableObject {
         try? FileManager.default.removeItem(atPath: Self.ptablePath)
 
         startIncremental()
+    }
+
+    /// Re-apply the user's excluded-directory list. Existing records under
+    /// those directories are hidden by the bridge immediately, and the next
+    /// scan will not descend into them at all.
+    func reloadExcludedPaths() {
+        bridge.setExcludedPaths(ExcludedPathsStore.shared.paths)
+        guard !searchText.isEmpty else { return }
+        if isContentSearch {
+            if !contentKeyword.isEmpty { performContentSearch(contentKeyword) }
+        } else {
+            performSearch(searchText)
+        }
     }
 
     func onSearchTextChanged() {

@@ -125,8 +125,12 @@ void IndexPersistence::flush(const IndexMetadata& metadata, bool force) {
             return;
         }
         if (force) {
-            if (wal_->currentSize() <= kWALHeaderSize) {
-                LOG_INFO("IndexPersistence", "Skipping flush — WAL is empty");
+            // A full scan writes records straight into the engine and does not
+            // touch the WAL, so an empty WAL is not a reason to skip when no
+            // base index exists yet. Without this check every launch repeated
+            // the whole-disk scan because nothing was ever persisted.
+            if (wal_->currentSize() <= kWALHeaderSize && flatWriter_->exists()) {
+                LOG_INFO("IndexPersistence", "Skipping flush — WAL is empty and base index exists");
                 return;
             }
         } else {

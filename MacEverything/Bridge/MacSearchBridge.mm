@@ -205,6 +205,17 @@
     });
 }
 
+- (void)setExcludedPaths:(NSArray<NSString *> *)paths {
+    std::vector<std::string> excluded;
+    excluded.reserve(paths.count);
+    for (NSString *path in paths) {
+        if (![path isKindOfClass:[NSString class]]) continue;
+        const char *utf8 = [path UTF8String];
+        if (utf8 && *utf8) excluded.emplace_back(utf8);
+    }
+    _serviceEngine->setExcludedPaths(excluded);
+}
+
 - (void)compactIndex {
     _serviceEngine->compactIndex();
 }
@@ -349,6 +360,7 @@
 
     NSMutableArray<MEFileResult *> *results = [NSMutableArray arrayWithCapacity:indices.size()];
     engine->forEachRecordWithPath(indices, [&](uint32_t, const FileRecord& r, const std::string& path) {
+        if (_serviceEngine->isExcludedPath(path)) return;
         NSString *nsName = [NSString stringWithUTF8String:r.name.c_str()];
         NSString *nsPath = [NSString stringWithUTF8String:path.c_str()];
         if (!nsName || !nsPath) return;
@@ -373,6 +385,7 @@
 
     NSMutableArray<MEFileResult *> *results = [NSMutableArray arrayWithCapacity:indices.size()];
     engine->forEachRecordWithPath(indices, [&](uint32_t, const FileRecord& r, const std::string& path) {
+        if (_serviceEngine->isExcludedPath(path)) return;
         NSString *nsName = [NSString stringWithUTF8String:r.name.c_str()];
         NSString *nsPath = [NSString stringWithUTF8String:path.c_str()];
         if (!nsName || !nsPath) return;
@@ -400,6 +413,7 @@
 
     NSMutableArray<MEFileResult *> *results = [NSMutableArray arrayWithCapacity:indices.size()];
     engine->forEachRecordWithPath(indices, [&](uint32_t, const FileRecord& r, const std::string& path) {
+        if (_serviceEngine->isExcludedPath(path)) return;
         NSString *nsName = [NSString stringWithUTF8String:r.name.c_str()];
         NSString *nsPath = [NSString stringWithUTF8String:path.c_str()];
         if (!nsName || !nsPath) return;
