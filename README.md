@@ -30,12 +30,12 @@
 
 ---
 
-## 本分支版本更新内容（101.0.0.173）
+## 本分支版本更新内容（10x.x.x.x版本系分支版本，x.x系原版本）
 <img width="1600" height="1200" alt="image" src="https://github.com/user-attachments/assets/05d7d188-22e8-4a10-bb03-cbe64e79e077" />
 
 
 
-本仓库基于 [joshua-wu/MacEverything](https://github.com/joshua-wu/MacEverything) 修改，版本 **101.0.0.173**。相对原项目的主要变更：
+本仓库基于 [joshua-wu/MacEverything](https://github.com/joshua-wu/MacEverything) 修改，相对原项目的主要变更：
 
 ### 界面与交互
 
