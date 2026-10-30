@@ -81,6 +81,17 @@ void FileSystemWatcher::startInternal(const std::string& rootPath,
     queue_ = dispatch_queue_create("com.maceverything.fswatcher", DISPATCH_QUEUE_SERIAL);
     FSEventStreamSetDispatchQueue(stream_, queue_);
     FSEventStreamStart(stream_);
+
+    // A stream started "since now" will not produce any callback until the
+    // first file change, so `lastEventId_` used to stay 0 after a full scan.
+    // That 0 was persisted into index.v6 and made the next launch treat the
+    // cache as invalid, repeating the whole-disk scan every restart. Seed the
+    // checkpoint with the current system event id so a cache written right
+    // after the scan always has a valid resume point.
+    if (sinceEventId == kFSEventStreamEventIdSinceNow) {
+        lastEventId_.store(FSEventsGetCurrentEventId(), std::memory_order_relaxed);
+    }
+
     LOG_INFO("FSWatcher", "[" << label_ << "] Started watching: " << rootPath);
 }
 

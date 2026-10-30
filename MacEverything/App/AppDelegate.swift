@@ -29,6 +29,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                                                name: .hideStatusBarIconPermanently, object: nil)
         UpdateService.shared.start()
         setupStatusBar()
+
+        // Resume the cached index as soon as the app launches — including a
+        // silent login-item start where the search window is never shown.
+        // Cached records load in the background and newly changed files are
+        // caught up by FSEvents without waiting for the UI to appear.
+        Task { @MainActor in
+            SearchViewModel.shared.start()
+        }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {

@@ -14,7 +14,7 @@
 </p>
 
 <p align="center">
-  <a href="#installation"><img src="https://img.shields.io/badge/macOS-13%2B-blue?logo=apple" alt="macOS 13+" /></a>
+  <a href="#installation"><img src="https://img.shields.io/badge/macOS-14%2B-blue?logo=apple" alt="macOS 14+" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="MIT License" /></a>
   <a href="#testing"><img src="https://img.shields.io/badge/tests-79%20modules-brightgreen" alt="79 test modules" /></a>
   <a href="#ai-tool-integration-mcp"><img src="https://img.shields.io/badge/MCP-compatible-blueviolet" alt="MCP Compatible" /></a>
@@ -42,7 +42,7 @@ Index an entire disk — **5 million+ files in just 14 seconds** — then get re
 
 ### Always at Your Fingertips
 
-Press **`Option+Space`** to summon the search window anytime (hotkey is customizable). The search bar auto-focuses — start typing immediately, find what you need, and move on. Supports launch-at-login with minimized background mode, staying out of your workflow.
+Press **`⌘⇧F`** to summon the search window anytime (hotkey is customizable). The search bar auto-focuses — start typing immediately, find what you need, and move on. Supports launch-at-login with minimized background mode, and resumes indexing in the background right after login without waiting for the window.
 
 ### Smart Input Experience
 
@@ -110,6 +110,7 @@ Type `infile:keyword` to search file contents — results include highlighted co
 - **Drag & drop** — drag files directly from search results to Finder, VS Code, Xcode, or any application
 - **Context menu** — Open / Reveal in Finder / Copy Path
 - **Cmd+Click** — quickly locate files in Finder
+- **Native Liquid Glass** — on macOS 26+, the search surface uses the system `.glassEffect(.regular.interactive())`, so translucency and tint follow the system Liquid Glass slider and Reduce Transparency; macOS 14–15 falls back to the system `.regularMaterial`
 - **Recent files** — automatically shows recently modified files when the search bar is empty
 
 ### AI Tool Integration (MCP)
@@ -152,14 +153,14 @@ curl "http://localhost:19860/api/status"                          # Index status
 2. Drag `MacEverything.app` to Applications
 3. Launch and grant **Full Disk Access** when prompted
 4. Wait for initial scan (~14 seconds)
-5. Press `Option+Space` to start searching
+5. Press `⌘⇧F` to start searching
 
 #### Build from Source
 
-**Requirements:** macOS 13+, Xcode 15+
+**Requirements:** macOS 14+, Xcode 26+ (macOS 26+ SDK; the Liquid Glass path activates on macOS 26 at runtime)
 
 ```bash
-git clone https://github.com/user/MacEverything.git && cd MacEverything
+git clone https://github.com/MaoRM93/EverythinginMac.git && cd EverythinginMac
 
 xcodebuild -project MacEverything.xcodeproj -scheme MacEverything \
   -configuration Release build SYMROOT=build
@@ -202,7 +203,7 @@ The same C++20 core engine powers three deployment modes:
 
 | Mode | Description |
 |------|-------------|
-| **GUI App** | SwiftUI menu-bar app, `Option+Space` global hotkey |
+| **GUI App** | SwiftUI menu-bar app, `⌘⇧F` global hotkey |
 | **CLI Daemon** | Headless `maceverything-daemon` — same engine, no UI |
 | **MCP Server** | `MacEverythingMCP` — stdio JSON-RPC proxy for AI tools |
 

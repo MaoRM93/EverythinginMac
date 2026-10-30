@@ -20,7 +20,10 @@ enum GlassTheme {
     /// field, exactly like Spotlight. The same radius is used when the panel
     /// opens, so the rounded corners never break apart.
     static let fieldHeight: CGFloat = 64
-    static let searchCorner: CGFloat = 28
+    /// A true capsule: half the field height, matching Spotlight's search
+    /// field and the “聚焦搜索” pill. A fixed 28pt radius left a visibly
+    /// flattened edge on the 64pt-tall field.
+    static let searchCorner: CGFloat = fieldHeight / 2
     static let collapsedHeight: CGFloat = fieldHeight
     static let collapsedCorner: CGFloat = searchCorner
     static let expandedCorner: CGFloat = searchCorner
@@ -38,71 +41,30 @@ enum GlassTheme {
     }
 }
 
-/// Backing material. macOS 26+ uses the native Liquid Glass effect; older
-/// systems get a visually compatible vibrancy surface.
+/// Backing material for the floating card.
 ///
-/// The glass is layered rather than tuned with a single opacity:
-/// 1. the system material (blur + environmental blending),
-/// 2. a neutral veil that limits how much of the desktop bleeds through, so a
-///    saturated wallpaper can no longer fight the text,
-/// 3. the content, which always sits above the veil.
+/// macOS 26+ gets the system Liquid Glass material and nothing else. The
+/// environmental blending, edge highlight, legibility dimming and hover/press
+/// response all come from `glassEffect`; stacking a white veil, a hairline
+/// border or a hand-made gradient on top of it is exactly what made the panel
+/// read as a milky acrylic plate instead of glass.
+///
+/// Older systems use the real system vibrancy material (`.regularMaterial`),
+/// not a custom blur pretending to be Liquid Glass.
 struct GlassSurface<S: InsettableShape>: View {
     let shape: S
+    /// Only the search capsule is interactive: Liquid Glass then reacts to
+    /// hover and press the way native controls do. Large cards stay calm.
+    var interactive: Bool = false
 
-    /// The floating search panel only needs the faintest edge — Spotlight has
-    /// no visible frame around the field; the onboarding card keeps a stronger
-    /// outline so it reads as a window.
-    var subtleEdge: Bool = false
-
-    @Environment(\.colorScheme) private var colorScheme
-
-    /// White keeps light mode airy; black keeps dark mode from washing out.
-    /// Light mode needs a noticeably stronger veil: black text on a pale
-    /// wallpaper has almost no contrast once the blur is applied, whereas
-    /// white text on a dark blur already reads well.
-    private var veil: Color {
-        colorScheme == .dark
-            ? Color.black.opacity(0.36)
-            : Color.white.opacity(0.52)
-    }
-
-    /// Hairline edge. Without it the white glass card dissolves into a light
-    /// desktop and the window appears to have no boundary at all.
-    private var borderColor: Color {
-        if subtleEdge {
-            return colorScheme == .dark
-                ? Color.white.opacity(0.10)
-                : Color.black.opacity(0.09)
-        }
-        return colorScheme == .dark
-            ? Color.white.opacity(0.16)
-            : Color.black.opacity(0.22)
-    }
-
+    @ViewBuilder
     var body: some View {
-        ZStack {
-            if #available(macOS 26.0, *) {
-                Color.clear
-                    .glassEffect(.regular, in: shape)
-            } else {
-                VisualEffectView(material: .underWindowBackground, blendingMode: .behindWindow)
-                shape.fill(Color(nsColor: .windowBackgroundColor).opacity(0.40))
-            }
-            shape.fill(veil)
-            shape.strokeBorder(borderColor, lineWidth: 1)
-            // Top specular highlight so the surface still reads as raised
-            // glass instead of a flat translucent rectangle.
-            shape.strokeBorder(
-                LinearGradient(
-                    colors: [Color.white.opacity(colorScheme == .dark ? 0.20 : 0.50),
-                             Color.white.opacity(0)],
-                    startPoint: .top,
-                    endPoint: .center
-                ),
-                lineWidth: 1
-            )
+        if #available(macOS 26.0, *) {
+            Color.clear
+                .glassEffect(interactive ? .regular.interactive() : .regular, in: shape)
+        } else {
+            shape.fill(.regularMaterial)
         }
-        .clipShape(shape)
     }
 }
 
@@ -447,7 +409,7 @@ final class SearchSelectionState: ObservableObject {
 // MARK: - Main content
 
 struct ContentView: View {
-    @StateObject private var viewModel = SearchViewModel()
+    @ObservedObject private var viewModel = SearchViewModel.shared
     @ObservedObject private var searchOptions = SearchOptions.shared
     @ObservedObject private var windowState = MainWindowState.shared
     @ObservedObject private var selection = SearchSelectionState.shared
@@ -473,8 +435,9 @@ struct ContentView: View {
     /// Soft drop shadow that separates the floating panel from the desktop.
     /// The window itself stays shadowless, so this is the only shadow the
     /// glass card gets — kept within `windowPadding` so it is never clipped.
+    /// Light enough that the card floats instead of carrying a hard outline.
     private var glassShadow: Color {
-        colorScheme == .dark ? Color.black.opacity(0.55) : Color.black.opacity(0.22)
+        colorScheme == .dark ? Color.black.opacity(0.38) : Color.black.opacity(0.15)
     }
 
     private var onboardingDone: Bool {
@@ -524,7 +487,7 @@ struct ContentView: View {
                             GlassSurface(shape: RoundedRectangle(cornerRadius: 20, style: .continuous))
                         )
                         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-                        .shadow(color: glassShadow, radius: 10, y: 4)
+                        .shadow(color: glassShadow, radius: 8, y: 3)
                         // The traffic lights are drawn inside the card instead of
                         // floating on the window corner, so they keep a comfortable
                         // margin from the edge at every window size.
@@ -690,19 +653,19 @@ struct ContentView: View {
         .background(
             GlassSurface(shape: RoundedRectangle(cornerRadius: GlassTheme.searchCorner,
                                                    style: .continuous),
-                         subtleEdge: true)
+                         interactive: true)
         )
         // The clip — not the layout — carries the open/close animation, so the
         // card's top edge and the window frame stay put for every frame.
         .clipShape(RevealShape(height: revealHeight, radius: GlassTheme.searchCorner))
-        .shadow(color: glassShadow, radius: 10, y: 4)
+        .shadow(color: glassShadow, radius: 8, y: 3)
     }
 
     private var searchFieldContent: some View {
         HStack(spacing: 10) {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 19, weight: .regular))
-                .foregroundStyle(isSearchFieldFocused ? Color.accentColor : Color.secondary)
+                .foregroundStyle(Color.secondary)
                 .frame(width: 22, height: 24)
                 .contentShape(Rectangle())
                 .onTapGesture { isSearchFieldFocused = true }
@@ -742,7 +705,7 @@ struct ContentView: View {
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .font(.system(size: 12))
-                        .foregroundStyle(Color.secondary.opacity(0.7))
+                        .foregroundStyle(Color.secondary)
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("clearButton")

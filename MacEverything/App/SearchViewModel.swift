@@ -22,6 +22,11 @@ struct ContentFileItem: Identifiable {
 
 @MainActor
 class SearchViewModel: ObservableObject {
+    /// One instance for the whole app. The login-item launch has no visible
+    /// window, so the index bootstrap starts from AppDelegate and the window
+    /// later just observes the same model.
+    static let shared = SearchViewModel()
+
     @Published var searchText: String = ""
     @Published var displayItems: [FileItem] = []
     @Published var totalMatches: Int = 0
@@ -109,6 +114,7 @@ class SearchViewModel: ObservableObject {
     /// read why they are needed.
     func start() {
         guard !started else { return }
+        guard PermissionGate.isComplete else { return }
         // Scanning "/" without Full Disk Access would make macOS show one TCC
         // permission alert per protected folder. The app asks for the single
         // Full Disk Access grant during onboarding instead, so the engine must

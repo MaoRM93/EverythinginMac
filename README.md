@@ -22,7 +22,7 @@
 </p>
 
 <p align="center">
-  <a href="#安装"><img src="https://img.shields.io/badge/macOS-13%2B-blue?logo=apple" alt="macOS 13+" /></a>
+  <a href="#安装"><img src="https://img.shields.io/badge/macOS-14%2B-blue?logo=apple" alt="macOS 14+" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="MIT License" /></a>
   <a href="#测试体系"><img src="https://img.shields.io/badge/tests-79%20modules-brightgreen" alt="79 test modules" /></a>
   <a href="#ai-工具集成-mcp"><img src="https://img.shields.io/badge/MCP-compatible-blueviolet" alt="MCP Compatible" /></a>
@@ -30,26 +30,28 @@
 
 ---
 
-## 本分支版本更新内容（10x.x.x.xxx 版本）
+## 本分支版本更新内容（101.0.0.173）
 <img width="1600" height="1200" alt="image" src="https://github.com/user-attachments/assets/05d7d188-22e8-4a10-bb03-cbe64e79e077" />
 
 
 
-本仓库基于 [joshua-wu/MacEverything](https://github.com/joshua-wu/MacEverything) 修改，版本 **101.0.0.110**。相对原项目的主要变更：
+本仓库基于 [joshua-wu/MacEverything](https://github.com/joshua-wu/MacEverything) 修改，版本 **101.0.0.173**。相对原项目的主要变更：
 
 ### 界面与交互
 
-- **全新首页**：隐藏标题栏，自上而下为标题、搜索框、权限提示、结果列表、底部状态栏
+- **Spotlight 式悬浮搜索窗**：无标题栏透明窗口，搜索栏本身就是窗口；收起时是一枚胶囊，输入后向下展开结果面板
+- **原生 Liquid Glass**：macOS 26+ 使用系统 `.glassEffect(.regular.interactive())`，通透度与着色自动跟随「系统设置 → 外观 → Liquid Glass」滑块及「降低透明度」；不再叠加自定义白纱、描边和高光渐变；macOS 14–15 回退为系统 `.regularMaterial`
 - **首次启动引导页**：先说明建立索引的必要性与数据安全性（全程本地、不上传），用户确认后才请求“完全磁盘访问权限”，不再一启动就连环弹窗
 - **权限流程简化**：欢迎页仅保留一个“请求权限”按钮，点击后打开系统设置并直接进入主页
-- **全局快捷键 `⌘↑F`**：唤起即聚焦搜索框，旧版默认 `⌥Space` 会自动迁移，用户自定义的快捷键保持不变
+- **全局快捷键 `⌘⇧F`**：唤起即聚焦搜索框，旧版默认 `⌥Space` 会自动迁移，用户自定义的快捷键保持不变
 - **全量汉化**：主菜单、状态栏菜单、右键菜单、快捷键设置、内容设置、搜索语法帮助、权限提示全部中文化
 
 ### 输入与索引
 
 - **修复索引期间输入法不可用**：首次建索引与 FSEvents 增量同步时，中文输入法不再闪烁或被中断，可正常候选上屏
 - **底栏状态提示**：索引或同步进行时，底栏显示“正在更新数据，搜索结果可能不全或有延迟”，不再用弹窗或大面积进度条打扰输入
-- **增量索引** ：修复开机再次索引的问题
+- **重启不再全量重建索引**：全量扫描结束即写入有效的 FSEvents checkpoint，重启后直接加载缓存并增量回放，不再重新扫描全盘
+- **登录自启动即后台索引**：开机自启后立即在后台加载缓存、回放 FSEvents，不必等搜索窗口被唤起
 
 ## 功能亮点
 
@@ -181,10 +183,10 @@ curl "http://localhost:19860/api/status"                          # 索引状态
 
 #### 从源码构建
 
-**环境要求：** macOS 13+，Xcode 15+
+**环境要求：** macOS 14+，Xcode 26+（macOS 26+ SDK，Liquid Glass API 需在 macOS 26 运行时启用）
 
 ```bash
-git clone https://github.com/user/MacEverything.git && cd MacEverything
+git clone https://github.com/MaoRM93/EverythinginMac.git && cd EverythinginMac
 
 xcodebuild -project MacEverything.xcodeproj -scheme MacEverything \
   -configuration Release build SYMROOT=build
