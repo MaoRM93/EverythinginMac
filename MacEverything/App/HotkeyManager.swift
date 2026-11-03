@@ -10,7 +10,50 @@ enum DefaultHotkey {
 /// Brings the main window back on screen and centres it on the display under
 /// the pointer, so a summoned window never reappears at a stale corner.
 enum WindowPresenter {
+    private static var pendingPresent = false
+    private static var activationObserver: NSObjectProtocol?
+
+    /// Present the main window now, or defer until the app is the active
+    /// process. Hotkeys can fire while the app is launched hidden (login
+    /// item), where the very first ⌘⇧F triggers `activate` while the app is
+    /// still the background process. `makeKeyAndOrderFront` is silently
+    /// dropped there because a window can only become key while its app is
+    /// the active (frontmost) process, which is why clicking the dock icon
+    /// used to make the next hotkey work. Deferring the presentation until
+    /// `didBecomeActive` closes that race without slowing the normal path
+    /// where the app is already active (present synchronously).
     static func presentMainWindow() {
+        if NSApp.isActive {
+            performPresent()
+            return
+        }
+
+        pendingPresent = true
+        NSApp.activate(ignoringOtherApps: true)
+
+        if activationObserver == nil {
+            activationObserver = NotificationCenter.default.addObserver(
+                forName: NSApplication.didBecomeActiveNotification,
+                object: nil, queue: .main
+            ) { _ in
+                if pendingPresent {
+                    performPresent()
+                }
+            }
+        }
+
+        // Safety net: if the app becomes active without a notification having
+        // fired (or the notification arrives before this turn), present on the
+        // next main-run-loop pass only if still pending.
+        DispatchQueue.main.async {
+            if pendingPresent && NSApp.isActive {
+                performPresent()
+            }
+        }
+    }
+
+    private static func performPresent() {
+        pendingPresent = false
         guard let window = NSApp.windows.first(where: { $0.title == "MacEverything" }) else { return }
 
         if window.isMiniaturized {
