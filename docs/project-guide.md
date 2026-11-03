@@ -738,7 +738,6 @@ make benchmark     # 性能基准测试
 - 49 个测试部分（Part），分布在 57 个 `.h` 头文件中
 - `test_all.cpp` 仅负责 `#include` 和 `main()` 调度，不包含测试实现
 - 支持 `--fast`/`--slow`/`--bench`/`--part N` 参数选择
-- 另有 1 个 Swift 测试文件（`test_index_refresh_throttle.swift`），独立编译
 
 **测试覆盖**：
 - 单元测试：各核心模块（SearchEngine、ContentIndex、WAL、PagedWriter、PathTable 等）
